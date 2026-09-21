@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# IDE / OS
+.idea/
+*.iml
+*.swp
+.DS_Store
+Thumbs.db
+
+# Dataset (personal financial data — keep OUT of the repository)
+Dataset/
+
+# Large exploratory / raw data (also under Dataset/, kept out) 
+Dataset/RAW DATA/
+Dataset/Featured and Integrated Data/
+
+# Backend runtime
+backend/.venv/
+
+# Flutter handled by app/.gitignore (build/, .dart_tool/, etc.)

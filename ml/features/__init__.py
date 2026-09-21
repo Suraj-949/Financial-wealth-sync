@@ -1,0 +1,1 @@
+"""WealthSync feature engineering & target generation package."""

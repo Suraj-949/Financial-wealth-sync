@@ -1,0 +1,63 @@
+{
+  "val": {
+    "Accuracy": 0.9933,
+    "Precision_weighted": 0.9934,
+    "Recall_weighted": 0.9933,
+    "F1_weighted": 0.9923,
+    "ROC_AUC": 0.9998,
+    "Confusion_Matrix": [
+      [
+        6,
+        5
+      ],
+      [
+        0,
+        737
+      ]
+    ]
+  },
+  "test": {
+    "Accuracy": 0.9625,
+    "Precision_weighted": 0.9507,
+    "Recall_weighted": 0.9625,
+    "F1_weighted": 0.9504,
+    "ROC_AUC": 0.9712,
+    "Confusion_Matrix": [
+      [
+        7,
+        52
+      ],
+      [
+        5,
+        1457
+      ]
+    ]
+  },
+  "algorithm_comparison": {
+    "LogisticRegression": {
+      "val_ROC_AUC": 0.9416553595658074,
+      "final_params": {
+        "C": 10.0,
+        "class_weight": "balanced",
+        "max_iter": 5000
+      }
+    },
+    "RandomForestClassifier": {
+      "val_ROC_AUC": 0.9833477241889725,
+      "final_params": {
+        "n_estimators": 250,
+        "max_depth": null,
+        "min_samples_leaf": 4
+      }
+    },
+    "XGBClassifier": {
+      "val_ROC_AUC": 0.9702726039225361,
+      "final_params": {
+        "n_estimators": 200,
+        "learning_rate": 0.05,
+        "max_depth": 3,
+        "subsample": 1.0
+      }
+    }
+  }
+}

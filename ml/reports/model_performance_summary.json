@@ -1,0 +1,108 @@
+{
+  "spending": {
+    "test_metrics": {
+      "MAE": 21492.959,
+      "RMSE": 81832.53,
+      "R2": -0.0621
+    },
+    "n_test_rows": 1371,
+    "test_window": [
+      "2024-01",
+      "2024-12"
+    ]
+  },
+  "savings": {
+    "test_metrics": {
+      "MAE": 39612.734,
+      "RMSE": 99307.045,
+      "R2": -0.0006
+    },
+    "n_test_rows": 1371,
+    "test_window": [
+      "2024-01",
+      "2024-12"
+    ]
+  },
+  "wellness": {
+    "test_metrics": {
+      "MAE": 0.102,
+      "RMSE": 0.394,
+      "R2": 0.9997
+    },
+    "n_test_rows": 1521,
+    "test_window": [
+      "2024-01",
+      "2024-12"
+    ]
+  },
+  "risk": {
+    "test_metrics": {
+      "Accuracy": 0.9625,
+      "Precision_weighted": 0.9507,
+      "Recall_weighted": 0.9625,
+      "F1_weighted": 0.9504,
+      "ROC_AUC": 0.9712,
+      "Confusion_Matrix": [
+        [
+          7,
+          52
+        ],
+        [
+          5,
+          1457
+        ]
+      ]
+    },
+    "n_test_rows": 1521,
+    "test_window": [
+      "2024-01",
+      "2024-12"
+    ],
+    "test_label_distribution": {
+      "1": 0.9612,
+      "0": 0.0388
+    }
+  },
+  "payment": {
+    "test_metrics": {
+      "Accuracy": 0.2373,
+      "Precision_weighted": 0.2335,
+      "Recall_weighted": 0.2373,
+      "F1_weighted": 0.2321,
+      "Confusion_Matrix": [
+        [
+          91,
+          240,
+          170,
+          197
+        ],
+        [
+          110,
+          226,
+          201,
+          169
+        ],
+        [
+          111,
+          211,
+          163,
+          175
+        ],
+        [
+          124,
+          211,
+          173,
+          171
+        ]
+      ]
+    },
+    "n_test_rows": 2743,
+    "test_label_distribution": {
+      "Cash": 0.2574,
+      "Bank Transfer": 0.2545,
+      "UPI": 0.2475,
+      "Debit Card": 0.2406
+    },
+    "n_chance_accuracy": 0.25
+  }
+}

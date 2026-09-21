@@ -1,0 +1,39 @@
+{
+  "val": {
+    "MAE": 21674.758,
+    "RMSE": 83393.049,
+    "R2": -0.0587
+  },
+  "test": {
+    "MAE": 21492.959,
+    "RMSE": 81832.53,
+    "R2": -0.0621
+  },
+  "algorithm_comparison": {
+    "RandomForestRegressor": {
+      "val_MAE_log": 1.543,
+      "final_params": {
+        "n_estimators": 250,
+        "max_depth": 10,
+        "min_samples_leaf": 1
+      }
+    },
+    "GradientBoostingRegressor": {
+      "val_MAE_log": 1.562,
+      "final_params": {
+        "n_estimators": 100,
+        "learning_rate": 0.05,
+        "max_depth": 3
+      }
+    },
+    "XGBRegressor": {
+      "val_MAE_log": 1.54,
+      "final_params": {
+        "n_estimators": 100,
+        "learning_rate": 0.05,
+        "max_depth": 3,
+        "subsample": 1.0
+      }
+    }
+  }
+}

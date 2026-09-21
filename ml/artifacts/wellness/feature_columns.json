@@ -1,0 +1,20 @@
+[
+  "income",
+  "expense",
+  "cash_flow",
+  "expense_ratio",
+  "savings_ratio",
+  "rent_burden",
+  "spending_stability",
+  "income_stability",
+  "savings_3m_mean",
+  "cash_flow_3m_mean",
+  "income_3m_mean",
+  "expense_3m_mean",
+  "income_trend",
+  "expense_trend",
+  "txn_count",
+  "avg_txn_amount",
+  "month",
+  "year"
+]
