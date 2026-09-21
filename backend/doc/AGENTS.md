@@ -4,8 +4,7 @@ Scope: `backend/` (FastAPI service) + the `ml/` pipeline it consumes.
 
 ## Environment & Commands
 
-- **Python:** use the Anaconda interpreter — `C:\Users\SURAJ\anaconda3\python.exe`.
-  The system `python` is blocked here. `fastapi 0.141.1` + `uvicorn 0.53.0` are installed.
+- **Python:** use the Anaconda interpreter. `fastapi 0.141.1` + `uvicorn 0.53.0` are installed.
 - **Run the API:** `powershell run_backend.ps1` (from `backend\`) — uvicorn on `:8000`, opens `/docs`.
 - **Verify endpoints:** `Invoke-RestMethod http://127.0.0.1:8000/health`, `/models`, then sample
   predict/explain on at least one model per change.
