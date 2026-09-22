@@ -1,26 +1,8 @@
 # WealthSync - Machine Learning Models
 
 Core ML models for the WealthSync financial-wealth application. Five models are
-built per `WEALTHSYNC_ML_REQUIREMENTS.md`.
+built.
 
-## Environment
-
-System Python on this machine is blocked by an OS Application-Control policy
-(`DLL load failed` for scipy/sklearn), so **use the Anaconda interpreter**:
-
-```
-C:\Users\SURAJ\anaconda3\python.exe   (Python 3.13.9)
-```
-
-Checklist: `pandas 2.3.3`, `numpy 2.3.5`, `scikit-learn 1.7.2`, `xgboost 3.2.0`,
-`scipy 1.16.3`, `joblib 1.5.2`, `shap 0.52.0`, `matplotlib 3.10.6`.
-
-Run everything with `-m` from this `ml` directory. Example:
-
-```
-cd C:\Users\SURAJ\Desktop\Financial wealth sync\ml
-C:\Users\SURAJ\anaconda3\python.exe -m training.train_spending
-```
 
 ## Dataset & cleaning
 
@@ -109,16 +91,3 @@ validation comparison lives in `training_metrics.json` under
 
 - `evaluation/evaluate_models.py` -> `reports/model_performance_summary.json`
 - `explainability/shap_explainer.py` -> `reports/shap_<model>.csv` + `.png`
-
-## Run everything
-
-```
-C:\Users\SURAJ\anaconda3\python.exe -m data.prepare_data
-C:\Users\SURAJ\anaconda3\python.exe -m training.train_spending
-C:\Users\SURAJ\anaconda3\python.exe -m training.train_savings
-C:\Users\SURAJ\anaconda3\python.exe -m training.train_wellness
-C:\Users\SURAJ\anaconda3\python.exe -m training.train_risk
-C:\Users\SURAJ\anaconda3\python.exe -m training.train_payment
-C:\Users\SURAJ\anaconda3\python.exe -m evaluation.evaluate_models
-C:\Users\SURAJ\anaconda3\python.exe -m explainability.shap_explainer
-```
