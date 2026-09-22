@@ -1,4 +1,4 @@
-# AGENTS.md — WealthSync Frontend (opencode / agent instructions)
+# AGENTS.md — WealthSync Frontend
 
 Scope: `app/` — the Flutter mobile app (Android-first, dark fintech theme).
 
@@ -18,22 +18,23 @@ Scope: `app/` — the Flutter mobile app (Android-first, dark fintech theme).
    delivered by `lib/services/finance_repository.dart`. Use `MockFinanceRepository` for dev only.
 2. **Never fake confidence/values.** `MockData` is labelled mock (e.g. `predictionConfidence`
    comment). Production values come from the backend — no fabricated figures in release code.
-3. **Share the theme, don't invent styles.** `AppColors`, `AppCard`, `SectionHeader`, `Pill`,
-   `TagBadge`, `EmptyState`, `ErrorState`, `Skeleton` from `core/theme/app_theme.dart`.
-   ⚠️ Use `TagBadge`, not `Badge` (Material 3's `Badge` widget collides).
-4. **One feature, one folder.** `features/<name>/<name>_screen.dart`, wired via `Navigator.push`;
-   shell tabs live in `features/shell/app_shell.dart`. Sub-widgets go in `features/<name>/widgets/`.
+3. **Share the theme, don't invent styles.** `AppColors`, `AppTheme` from `app/theme.dart`;
+   `AppCard`, `SectionHeader`, `Pill`, `TagBadge`, `EmptyState`, `ErrorState`, `Skeleton` from
+   `widgets/common.dart`. ⚠️ Use `TagBadge`, not `Badge` (Material 3's `Badge` widget collides).
+4. **One feature, one folder.** `screens/<name>/<name>_screen.dart`, wired via `Navigator.push`;
+   shell tabs live in `screens/shell/app_shell.dart`. Screen-local sub-widgets go in
+   `screens/<name>/widgets/`; shared widgets go in `widgets/`.
 5. **No arithmetic in build().** Sums/percentages belong in the repository/models layer.
 6. **Flutter 3.38 gotchas:** Material 3 `Badge` exists → use `TagBadge`. Avoid `const` around
    widgets whose children are runtime values (callbacks/methods) — the analyzer rejects it.
 
 ## Key files
-- `lib/main.dart` → `lib/features/shell/app_shell.dart` (entry + tabs).
+- `lib/main.dart` → `lib/app/app.dart` (WealthSyncApp) → `lib/screens/shell/app_shell.dart` (tabs).
 - `lib/services/finance_repository.dart` — repo IFace, `DashboardData`, `MockFinanceRepository`,
   `getRepository()`, `ApiClient` (ML endpoints; swap mocks for `GET /api/dashboard` next).
 - `lib/services/mock_data.dart` — demo data (labelled).
 - `lib/models/models.dart` — all domain types.
-- Screens: `features/dashboard/`, `transactions/`, `budget/`, `goals/`, `more/`, `accounts/`,
+- Screens: `screens/dashboard/`, `transactions/`, `budget/`, `goals/`, `more/`, `accounts/`,
   `alerts/`, `recommendations/`, `copilot/`, `xai/`, `profile/`, `stub/`.
 - Tests: `test/widget_test.dart` (set `MockFinanceRepository.setDelay(0)` in `setUpAll`).
 

@@ -7,16 +7,22 @@ objects; they never compute financial figures.
 app/
 ├── pubspec.yaml                 # deps: fl_chart, http, intl
 ├── lib/
-│   ├── main.dart                # entry: WealthSyncApp → MaterialApp(theme) → AppShell
+│   ├── main.dart                # entry: runApp(WealthSyncApp)
 │   ├── config.dart              # API_BASE (default http://10.0.2.2:8000, --dart-define override)
 │   │
-│   ├── core/
-│   │   ├── constants/app_constants.dart   # user name, dashboard date ranges
-│   │   ├── routes/app_routes.dart         # named-route constants
-│   │   ├── theme/app_theme.dart           # AppColors, AppTheme, AppCard, SectionHeader,
-│   │   │                                   #   Pill, TagBadge, EmptyState, ErrorState,
-│   │   │                                   #   Skeleton, DashboardSkeleton
-│   │   └── utils/formatters.dart          # INR / % / date helpers
+│   ├── app/
+│   │   ├── app.dart             # WealthSyncApp → MaterialApp(theme) → AppShell
+│   │   ├── theme.dart           # AppColors (tokens), AppTheme (MaterialApp theme)
+│   │   ├── constants.dart       # user name, dashboard date ranges (AppConstants)
+│   │   └── routes.dart          # named-route constants (AppRoutes)
+│   │
+│   ├── utils/
+│   │   └── formatters.dart      # Formatters: INR / % / date helpers
+│   │
+│   ├── widgets/
+│   │   ├── common.dart          # shared UI: AppCard, SectionHeader, Pill, TagBadge,
+│   │   │                        #   EmptyState, ErrorState, Skeleton, DashboardSkeleton
+│   │   └── transaction_card.dart# TransactionTile (dashboard + transactions reuse)
 │   │
 │   ├── models/models.dart      # Transaction, Account, FinancialSummary, SpendingCategory,
 │   │                           #   BudgetItem, Goal, AiInsight, PaymentOffer/Suggestion,
@@ -28,7 +34,7 @@ app/
 │   │   │                             #   ApiClient for ML endpoints
 │   │   └── mock_data.dart            # MockData (labelled) — dev only
 │   │
-│   └── features/
+│   └── screens/                       # one folder per feature/screen
 │       ├── shell/app_shell.dart            # bottom NavigationBar + IndexedStack (5 tabs)
 │       ├── dashboard/
 │       │   ├── dashboard_screen.dart       # greeting, date-range sheet, slivers, states
@@ -63,7 +69,8 @@ app/
 `insights`, `paymentSuggestion`, `accounts`, `recentTransactions`.
 
 ## Adding a screen
-1. `features/<name>/<name>_screen.dart` (StatefulWidget + repo load, own loading/error empty states).
-2. Push via `Navigator.push(MaterialPageRoute(...))` or add to `features/shell/app_shell.dart` tabs.
-3. Reuse theme widgets + `Formatters`; never compute figures in the widget.
+1. `screens/<name>/<name>_screen.dart` (StatefulWidget + repo load, own loading/error empty states).
+2. Push via `Navigator.push(MaterialPageRoute(...))` or add to `screens/shell/app_shell.dart` tabs.
+3. Reuse theme/widgets (`app/theme.dart`, `widgets/common.dart`) + `Formatters`; never compute
+   figures in the widget.
 4. Verify: analyze → test → debug APK.
