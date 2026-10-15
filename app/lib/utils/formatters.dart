@@ -5,8 +5,28 @@ class Formatters {
   static final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹ ', decimalDigits: 0);
   static final _inrDec = NumberFormat.currency(locale: 'en_IN', symbol: '₹ ', decimalDigits: 2);
   static final _num = NumberFormat.decimalPattern('en_IN');
+  static final _usd = NumberFormat.currency(locale: 'en_US', symbol: r'$', decimalDigits: 2);
+  static final _plain = NumberFormat.currency(locale: 'en_US', symbol: '', decimalDigits: 2);
 
   static String inr(num value) => _inr.format(value);
+
+  /// Formats [value] in the [currency] the value is actually denominated in
+  /// (ISO 4217 code, e.g. `USD`, `INR`).
+  ///
+  /// The ML models forecast in USD while the rest of the dashboard is INR, so
+  /// amounts must be rendered with their own symbol rather than forcing `₹`.
+  /// Unknown codes fall back to `CODE 1,234.56` so nothing is ever silently
+  /// shown with the wrong symbol.
+  static String money(num value, String currency) {
+    switch (currency.toUpperCase()) {
+      case 'USD':
+        return _usd.format(value);
+      case 'INR':
+        return _inr.format(value);
+      default:
+        return '${currency.toUpperCase()} ${_plain.format(value)}';
+    }
+  }
 
   static String inrDec(num value) => _inrDec.format(value);
 

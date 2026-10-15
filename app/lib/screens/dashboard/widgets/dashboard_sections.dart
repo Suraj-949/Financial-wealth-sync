@@ -416,7 +416,8 @@ class _QuickAction extends StatelessWidget {
   }
 }
 
-/// Expense prediction card with area chart, delta and confidence.
+/// Expense prediction card: real ML forecast when the backend is reachable,
+/// otherwise the mock trend (area chart, delta and confidence).
 class PredictionCard extends StatelessWidget {
   final DashboardData data;
 
@@ -424,6 +425,67 @@ class PredictionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ml = data.mlPrediction;
+    return ml != null ? _modelForecast(ml) : _mockTrend();
+  }
+
+  /// Real output of `POST /api/ml/spending/predict`.
+  ///
+  /// The model forecasts a **quarterly total in USD**, so it is rendered with
+  /// its own symbol and horizon. It is deliberately not plotted on the monthly
+  /// INR history — a quarterly USD figure cannot share that axis.
+  Widget _modelForecast(SpendingPrediction ml) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: const [
+            Expanded(
+              child: Text('Model Forecast · Next Quarter',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+            ),
+            Icon(Icons.smart_toy_outlined, size: 15, color: AppColors.ai),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Flexible(
+              child: Text(Formatters.money(ml.predictedSpending, ml.currency),
+                  style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 27,
+                      fontWeight: FontWeight.w800)),
+            ),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Text(ml.currency,
+                  style: const TextStyle(
+                      color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(ml.note,
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 11, height: 1.4)),
+        const SizedBox(height: 14),
+        const Text('Monthly expense trend (₹) · forecast not plotted',
+            style: TextStyle(
+                color: AppColors.textMuted, fontSize: 11, fontStyle: FontStyle.italic)),
+        const SizedBox(height: 6),
+        ExpensePredictionChart(
+          historic: data.historicExpense,
+          predicted: null,
+          labels: data.monthLabels,
+        ),
+      ],
+    );
+  }
+
+  /// Mock forecast — fallback while the backend is down, or for pure-demo runs.
+  Widget _mockTrend() {
     final up = data.predictedDeltaPct >= 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -5,6 +5,7 @@ import '../../app/theme.dart';
 import '../../widgets/common.dart';
 import '../../utils/formatters.dart';
 import '../../services/finance_repository.dart';
+import '../../models/models.dart';
 import '../accounts/accounts_screen.dart';
 import '../alerts/alerts_screen.dart';
 import '../copilot/copilot_chat_screen.dart';
@@ -42,10 +43,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _data = data;
         _error = null;
       });
+      // Best effort: swap the mock forecast for the real model output. The
+      // dashboard paints immediately with mock data, then upgrades.
+      _loadForecast();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString());
     }
+  }
+
+  /// Calls `POST /api/ml/spending/predict` and merges the result in.
+  ///
+  /// Deliberately silent on failure: if the backend is down the mock forecast
+  /// already on screen is kept rather than turning the whole tab into an error.
+  Future<void> _loadForecast() async {
+    SpendingPrediction prediction;
+    try {
+      prediction = await repo.fetchSpendingPrediction();
+    } catch (_) {
+      return; // Backend unreachable -> keep the mock forecast.
+    }
+    if (!mounted || _data == null) return;
+    setState(() => _data = _data!.copyWith(mlPrediction: prediction));
   }
 
   Future<void> _pickRange() async {

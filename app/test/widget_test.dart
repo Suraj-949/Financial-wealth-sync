@@ -2,14 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wealthsync/app/app.dart';
-import 'package:wealthsync/services/finance_repository.dart';
 
 void main() {
-  setUpAll(() {
-    // Remove artificial latency so the widget test does not flake.
-    (getRepository() as MockFinanceRepository).setDelay(0);
-  });
-
   testWidgets('WealthSync app boots to the dashboard shell', (tester) async {
     await tester.pumpWidget(const WealthSyncApp());
 

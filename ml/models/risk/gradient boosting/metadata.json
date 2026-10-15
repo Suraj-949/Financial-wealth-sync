@@ -1,0 +1,97 @@
+{
+  "task": "risk_prediction",
+  "model": "GradientBoostingRegressor",
+  "target": "default payment next month",
+  "output_type": "predicted_default_probability",
+  "risk_score_formula": "predicted_probability * 100",
+  "risk_bands": {
+    "low": "0-30",
+    "medium": "31-60",
+    "high": "61-100"
+  },
+  "random_seed": 42,
+  "test_mae": 0.26,
+  "test_rmse": 0.36,
+  "test_r2": 0.2351,
+  "test_brier": 0.1318,
+  "test_roc_auc": 0.7877,
+  "training_dataset": "UCI Default of Credit Card Clients",
+  "status": "production_candidate",
+  "trained_at": "2026-10-08 (Phase 4)",
+  "exported_at": "2026-10-08",
+  "environment": {
+    "python": "3.13.16",
+    "sklearn": "1.6.1",
+    "joblib": "1.5.3",
+    "numpy": "2.3.5",
+    "pandas": "2.2.3"
+  },
+  "hyperparameters": {
+    "n_estimators": 300,
+    "min_samples_leaf": 1,
+    "max_depth": 3,
+    "learning_rate": 0.05,
+    "subsample": 0.9,
+    "max_features": null,
+    "random_state": 42
+  },
+  "preprocessing": {
+    "description": "numeric: median imputation (+binary missing indicators for columns with missing values in TRAIN) then standard scaling; categorical: most-frequent imputation then one-hot encoding (handle_unknown='ignore'). Fitted on TRAIN ONLY inside the pipeline; validation/test transformed frozen.",
+    "fit_scope": "training data only",
+    "n_features_out": 37
+  },
+  "inference": {
+    "primary_path": "pipe = joblib.load('model.joblib'); pred = pipe.predict(raw_df[raw_input_columns])",
+    "alternate_path": "X = joblib.load('preprocessor.joblib').transform(raw_df[raw_input_columns]); pred = joblib.load('model.joblib').named_steps['model'].predict(X)",
+    "input": "pandas.DataFrame with exactly the columns and order in feature_columns.json",
+    "output": "predicted probability of default next month in [0, 1]; multiply by 100 for the 0-100 risk score; bands are interpretation only (observed test default rates: Low 12.6%, Medium 40.3%, High 73.6%)"
+  },
+  "leakage_audit": "features available at scoring time only (spending: Phase-3 available-at-t whitelist, chronological split by target file; risk: months -6..-1 + static); preprocessing train-only; no target-derived features (Phase-3/Phase-4 audits)",
+  "provenance": {
+    "phase4_artifacts": [
+      "pipeline.joblib",
+      "metrics.json",
+      "predictions_test.csv"
+    ],
+    "report": "reports/final_model_selection_report.md"
+  },
+  "target_description": "OBSERVED binary outcome 'default payment next month' (0/1), never rescaled; models are regressors whose continuous output is the predicted default probability (user-approved probability-anchored design, 2026-10-08). RiskScore_0_100 = 100 x predicted probability is an interpretation, NOT a separately trained target.",
+  "output_semantics": "predicted probability of default next month in [0, 1]; multiply by 100 for the 0-100 risk score; bands are interpretation only (observed test default rates: Low 12.6%, Medium 40.3%, High 73.6%)",
+  "rows": {
+    "train": 18000,
+    "validation": 6000,
+    "test": 6000
+  },
+  "split": {
+    "mechanism": "stratified 60/20/20, seed 42 (cross-sectional snapshot: one row per customer, single common prediction date - no temporal ordering to break; 30,000 unique IDs make entity leakage impossible)"
+  },
+  "band_observed_default_rates_on_test": {
+    "low_0_30": 0.1264,
+    "medium_31_60": 0.4031,
+    "high_61_100": 0.7357
+  },
+  "baselines_on_test": {
+    "prevalence_constant": {
+      "MAE": 0.34,
+      "RMSE": 0.42,
+      "R2": -0.0,
+      "Brier": 0.1723,
+      "AUC": 0.5
+    },
+    "last_state_rule_PAY_0": {
+      "MAE": 0.22,
+      "RMSE": 0.46,
+      "R2": -0.2549,
+      "Brier": 0.2162,
+      "AUC": 0.691,
+      "note": "persistence-analog; true time-series persistence NOT_APPLICABLE (one row per customer)"
+    }
+  },
+  "selection": "best supervised model by validation Brier (0.13726); beats prevalence and last-state baselines (Phase-4 report section 12)",
+  "caveats": [
+    "UCI data = Taiwan credit-card clients, 2005; generalization to other populations/products is uncertain - decision-support, not an automatic score",
+    "R2 on a bounded binary outcome is inherently small; Brier/AUC vs the prevalence baseline are the meaningful yardsticks",
+    "the 61-100 High band is legitimately sparse at 22.12% prevalence",
+    "repay_ratio_mean6 NaN is structural (zero billed total); handled inside the pipeline by median imputation + missing indicator, never zero-filled"
+  ]
+}

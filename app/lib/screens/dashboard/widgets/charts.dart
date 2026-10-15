@@ -18,11 +18,28 @@ class SpendingDonut extends StatefulWidget {
   State<SpendingDonut> createState() => _SpendingDonutState();
 }
 
+/// Returns the touched section index clamped to `[0, length)` as a nullable
+/// index, or `null` when the touch did not land on a section.
+///
+/// fl_chart reports `-1` for touches that miss every section (for example
+/// inside the donut hole, where `centerSpaceRadius` carves out a gap). That
+/// value must never be used as a list index or it throws a `RangeError`.
+int? safeSectionIndex(int? index, int length) {
+  if (index == null || index < 0 || index >= length) return null;
+  return index;
+}
+
 class _SpendingDonutState extends State<SpendingDonut> {
   int? _selected;
 
+  /// Only return an index that is actually valid for the current categories.
+  /// [PieTouchData] reports `-1` when the touch lands outside every section
+  /// (e.g. inside the donut hole), which would otherwise crash the build.
+  int? get _activeIndex => safeSectionIndex(_selected, widget.categories.length);
+
   @override
   Widget build(BuildContext context) {
+    final active = _activeIndex;
     return Column(
       children: [
         SizedBox(
@@ -38,7 +55,11 @@ class _SpendingDonutState extends State<SpendingDonut> {
                   pieTouchData: PieTouchData(
                     touchCallback: (event, response) {
                       if (event is FlTapUpEvent || event is FlTapDownEvent) {
-                        setState(() => _selected = response?.touchedSection?.touchedSectionIndex);
+                        final index = response?.touchedSection?.touchedSectionIndex;
+                        setState(() {
+                          // -1 means the touch missed every section (donut hole).
+                          _selected = safeSectionIndex(index, widget.categories.length);
+                        });
                       }
                     },
                   ),
@@ -58,9 +79,9 @@ class _SpendingDonutState extends State<SpendingDonut> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _selected == null
+                    active == null
                         ? Formatters.inr(widget.total)
-                        : Formatters.inr(widget.categories[_selected!].amount),
+                        : Formatters.inr(widget.categories[active].amount),
                     style: const TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 19,
@@ -68,7 +89,7 @@ class _SpendingDonutState extends State<SpendingDonut> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    _selected == null ? 'Total Expenses' : widget.categories[_selected!].category.label,
+                    active == null ? 'Total Expenses' : widget.categories[active].category.label,
                     style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
                   ),
                 ],
@@ -144,9 +165,12 @@ class _LegendRow extends StatelessWidget {
 }
 
 /// Area chart: historical expenses (blue) + predicted month (purple, dashed).
+///
+/// [predicted] is optional so the chart can be drawn history-only when there is
+/// no forecast to plot in the same currency as [historic].
 class ExpensePredictionChart extends StatelessWidget {
   final List<double> historic;
-  final double predicted;
+  final double? predicted;
   final List<String> labels;
 
   const ExpensePredictionChart({
@@ -160,16 +184,78 @@ class ExpensePredictionChart extends StatelessWidget {
   Widget build(BuildContext context) {
     const histColor = AppColors.savings;
     const predColor = AppColors.ai;
+    final pred = predicted;
 
     final histSpots = List.generate(
         historic.length, (i) => FlSpot(i.toDouble(), historic[i]));
-    final predSpots = [
-      FlSpot(
-        historic.length - 1.toDouble(),
-        historic.last,
+    final predSpots = pred == null
+        ? <FlSpot>[]
+        : [
+            FlSpot(
+              historic.length - 1.toDouble(),
+              historic.last,
+            ),
+            FlSpot(historic.length.toDouble(), pred),
+          ];
+
+    // With no forecast there is no point at x == historic.length, so don't
+    // render the "predicted" month on the axis either.
+    final axisLabels =
+        pred == null ? labels.take(historic.length).toList(growable: false) : labels;
+    final predictedX = pred == null ? -1 : historic.length;
+
+    final bars = <LineChartBarData>[
+      LineChartBarData(
+        spots: histSpots,
+        isCurved: true,
+        curveSmoothness: 0.3,
+        barWidth: 3,
+        color: histColor,
+        dotData: const FlDotData(show: true),
+        belowBarData: BarAreaData(
+          show: true,
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              histColor.withValues(alpha: .3),
+              histColor.withValues(alpha: .02),
+            ],
+          ),
+        ),
       ),
-      FlSpot(historic.length.toDouble(), predicted),
     ];
+    if (pred != null) {
+      bars.add(
+        LineChartBarData(
+          spots: predSpots,
+          isCurved: true,
+          barWidth: 3,
+          color: predColor,
+          dashArray: [6, 4],
+          dotData: FlDotData(
+            show: true,
+            getDotPainter: (spot, pct, bar, index) => FlDotCirclePainter(
+              radius: 4,
+              color: predColor,
+              strokeWidth: 2,
+              strokeColor: AppColors.bg,
+            ),
+          ),
+          belowBarData: BarAreaData(
+            show: true,
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                predColor.withValues(alpha: .28),
+                predColor.withValues(alpha: .02),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return SizedBox(
       height: 200,
@@ -207,17 +293,17 @@ class ExpensePredictionChart extends StatelessWidget {
                 interval: 1,
                 getTitlesWidget: (v, meta) {
                   final i = v.toInt();
-                  if (i < 0 || i >= labels.length) return const SizedBox.shrink();
+                  if (i < 0 || i >= axisLabels.length) return const SizedBox.shrink();
                   return Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      labels[i],
+                      axisLabels[i],
                       style: TextStyle(
-                        color: i == historic.length
+                        color: i == predictedX
                             ? AppColors.ai
                             : AppColors.textMuted,
                         fontSize: 10.5,
-                        fontWeight: i == historic.length
+                        fontWeight: i == predictedX
                             ? FontWeight.w700
                             : FontWeight.w400,
                       ),
@@ -245,64 +331,19 @@ class ExpensePredictionChart extends StatelessWidget {
               }).toList(),
             ),
           ),
-          lineBarsData: [
-            LineChartBarData(
-              spots: histSpots,
-              isCurved: true,
-              curveSmoothness: 0.3,
-              barWidth: 3,
-              color: histColor,
-              dotData: const FlDotData(show: true),
-              belowBarData: BarAreaData(
-                show: true,
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    histColor.withValues(alpha: .3),
-                    histColor.withValues(alpha: .02),
+          lineBarsData: bars,
+          extraLinesData: pred == null
+              ? null
+              : ExtraLinesData(
+                  horizontalLines: [
+                    HorizontalLine(
+                      y: pred,
+                      color: predColor.withValues(alpha: .35),
+                      strokeWidth: 1,
+                      dashArray: [4, 5],
+                    ),
                   ],
                 ),
-              ),
-            ),
-            LineChartBarData(
-              spots: predSpots,
-              isCurved: true,
-              barWidth: 3,
-              color: predColor,
-              dashArray: [6, 4],
-              dotData: FlDotData(
-                show: true,
-                getDotPainter: (spot, pct, bar, index) => FlDotCirclePainter(
-                  radius: 4,
-                  color: predColor,
-                  strokeWidth: 2,
-                  strokeColor: AppColors.bg,
-                ),
-              ),
-              belowBarData: BarAreaData(
-                show: true,
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    predColor.withValues(alpha: .28),
-                    predColor.withValues(alpha: .02),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          extraLinesData: ExtraLinesData(
-            horizontalLines: [
-              HorizontalLine(
-                y: predicted,
-                color: predColor.withValues(alpha: .35),
-                strokeWidth: 1,
-                dashArray: [4, 5],
-              ),
-            ],
-          ),
         ),
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,

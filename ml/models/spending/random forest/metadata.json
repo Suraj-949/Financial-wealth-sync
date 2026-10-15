@@ -1,0 +1,92 @@
+{
+  "task": "spending_prediction",
+  "model": "RandomForestRegressor",
+  "target": "total_spend_t_plus_1",
+  "random_seed": 42,
+  "test_mae": 2452.25,
+  "test_rmse": 5230.91,
+  "test_r2": 0.5367,
+  "training_dataset": "BLS CE Interview PUMD 2004",
+  "status": "production_candidate",
+  "trained_at": "2026-10-08 (Phase 4)",
+  "exported_at": "2026-10-08",
+  "environment": {
+    "python": "3.13.16",
+    "sklearn": "1.6.1",
+    "joblib": "1.5.3",
+    "numpy": "2.3.5",
+    "pandas": "2.2.3"
+  },
+  "hyperparameters": {
+    "n_estimators": 300,
+    "min_samples_leaf": 5,
+    "max_depth": null,
+    "max_features": 1.0,
+    "random_state": 42
+  },
+  "preprocessing": {
+    "description": "numeric: median imputation (+binary missing indicators for columns with missing values in TRAIN) then standard scaling; categorical: most-frequent imputation then one-hot encoding (handle_unknown='ignore'). Fitted on TRAIN ONLY inside the pipeline; validation/test transformed frozen.",
+    "fit_scope": "training data only",
+    "n_features_out": 42
+  },
+  "inference": {
+    "primary_path": "pipe = joblib.load('model.joblib'); pred = pipe.predict(raw_df[raw_input_columns])",
+    "alternate_path": "X = joblib.load('preprocessor.joblib').transform(raw_df[raw_input_columns]); pred = joblib.load('model.joblib').named_steps['model'].predict(X)",
+    "input": "pandas.DataFrame with exactly the columns and order in feature_columns.json",
+    "output": "predicted next-quarter total expenditure in USD (TOTEXPPQ scale, 2004 dollars)"
+  },
+  "leakage_audit": "features available at scoring time only (spending: Phase-3 available-at-t whitelist, chronological split by target file; risk: months -6..-1 + static); preprocessing train-only; no target-derived features (Phase-3/Phase-4 audits)",
+  "provenance": {
+    "phase4_artifacts": [
+      "pipeline.joblib",
+      "metrics.json",
+      "predictions_test.csv"
+    ],
+    "report": "reports/final_model_selection_report.md"
+  },
+  "target_description": "Consumer-unit total expenditure (TOTEXPPQ) of the next consecutive interview, trailing-3-month reference window (Phase-3-verified observed target, 20,378 t->t+1 transitions)",
+  "output_semantics": "predicted next-quarter total expenditure in USD (TOTEXPPQ scale, 2004 dollars)",
+  "rows": {
+    "train": 10163,
+    "validation": 5058,
+    "test": 5157
+  },
+  "split": {
+    "mechanism": "chronological by TARGET file (Phase-3 split, unchanged)",
+    "train": "target files 042+043",
+    "validation": "target file 044",
+    "test": "target file 051"
+  },
+  "baselines_on_test": {
+    "persistence": {
+      "MAE": 2977.01,
+      "RMSE": 7201.56,
+      "R2": 0.1218
+    },
+    "cu_past_only_mean": {
+      "MAE": 2700.42,
+      "RMSE": 5811.0,
+      "R2": 0.3752,
+      "n": 3160,
+      "note": "defined only where the CU has >=1 prior interview"
+    },
+    "global_train_mean": {
+      "MAE": 4798.15,
+      "RMSE": 7692.67,
+      "R2": -0.0021
+    },
+    "model_on_matched_subset": {
+      "MAE": 2391.97,
+      "RMSE": 4800.9,
+      "R2": 0.5735,
+      "n": 3160
+    }
+  },
+  "selection": "best supervised model by validation R2 (0.5106); beats the CU past-only mean baseline on both the full test set and the matched subset (Phase-4 report section 12)",
+  "caveats": [
+    "CE 2004 package only (reference quarters 2003Q4-2004Q3); <=4 interviews per CU",
+    "unweighted (survey weights excluded as features by rule); not population-representative extrapolation",
+    "ITBI dollar income carries a ~1.3-1.5x calibration offset vs income-class bands (Phase-3 caveat D4); relative/temporal uses valid, absolute-dollar income claims need calibration",
+    "total_spend_paststd is structurally all-NaN in the train split and is dropped by the train-fitted imputer"
+  ]
+}
