@@ -26,12 +26,15 @@ app/
 │   │
 │   ├── models/models.dart      # Transaction, Account, FinancialSummary, SpendingCategory,
 │   │                           #   BudgetItem, Goal, AiInsight, PaymentOffer/Suggestion,
-│   │                           #   Recommendation, AlertItem, ShapFactor, CopilotReply/Message
+│   │                           #   Recommendation, AlertItem, ShapFactor, CopilotReply/Message,
+│   │                           #   SpendingPrediction (BLS USD), InrForecast (monthly INR),
+│   │                           #   RiskPrediction (UCI), ShapExplanation(Item)
 │   │
 │   ├── services/
 │   │   ├── finance_repository.dart   # FinanceRepository (abstract) + DashboardData aggregate,
 │   │   │                             #   MockFinanceRepository (setDelay), getRepository(),
-│   │   │                             #   ApiClient for ML endpoints
+│   │   │                             #   ApiClient (typed ML helpers), ApiFinanceRepository
+│   │   │                             #   (live backend, mock fallback), getApiRepository()
 │   │   └── mock_data.dart            # MockData (labelled) — dev only
 │   │
 │   └── screens/                       # one folder per feature/screen
@@ -62,11 +65,26 @@ app/
 ## Data contract (everything flows from the repository)
 `FinanceRepository`: `fetchDashboard`, `fetchTransactions`, `fetchBudget`, `fetchGoals`,
 `fetchRecommendations`, `fetchAlerts`, `fetchAccounts`, `fetchXaiFactors`, `fetchPaymentOffers`,
-`copilotAsk`.
+`copilotAsk`, plus the ML surface: `fetchSpendingPrediction` (BLS USD),
+`fetchInrForecast` (INR spending/savings/wellness bundle), `fetchRiskPrediction`
++ `fetchRiskExplanation` (UCI).
 
 `DashboardData` aggregates: `summary` (income/expenses/savings/wellness + deltas), `categories`
 (donut), `historicExpense` + `predictedExpense` + `predictionConfidence` + `monthLabels`,
-`insights`, `paymentSuggestion`, `accounts`, `recentTransactions`.
+`insights`, `paymentSuggestion`, `accounts`, `recentTransactions`, plus best-effort
+`mlPrediction` (BLS quarterly USD card) and `inrForecast` (monthly INR bundle that
+also upgrades `summary.savings` / `summary.wellnessScore`).
+
+## ML pipeline (two model families — do not mix their units)
+| Family | Models | Endpoints | Units | Used by |
+|---|---|---|---|---|
+| BLS/UCI (`ml/models/`) | spending RF, risk GBM | `POST /api/ml/spending/predict`, `POST /api/ml/risk/predict` | USD quarterly / 0-100 score | PredictionCard, Risk screen |
+| INR monthly (`ml/artifacts/`) | spending, savings, wellness, risk | `GET /sample/{model}` → `POST /predict/{model}` (+ `POST /explain/{model}`) | INR monthly / 0-100 | Dashboard summary, XAI screen |
+
+`getRepository()` returns the offline mock (tests stay hermetic). Screens call
+`getApiRepository()` best-effort and keep mock content on failure — never turn a
+tab into an error just because the backend is down. `MockFinanceRepository.setDelay(0)`
+skips timers entirely (a zero `Future.delayed` deadlocks `testWidgets` fake async).
 
 ## Adding a screen
 1. `screens/<name>/<name>_screen.dart` (StatefulWidget + repo load, own loading/error empty states).

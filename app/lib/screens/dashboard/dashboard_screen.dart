@@ -52,19 +52,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  /// Calls `POST /api/ml/spending/predict` and merges the result in.
+  /// Upgrades the mock dashboard with live model output (best-effort).
   ///
-  /// Deliberately silent on failure: if the backend is down the mock forecast
+  /// - BLS quarterly USD forecast: `POST /api/ml/spending/predict`
+  /// - INR monthly bundle: `GET /sample/{spending,savings,wellness}` then
+  ///   `POST /predict/{spending,savings,wellness}`
+  ///
+  /// Deliberately silent on failure: if the backend is down the mock content
   /// already on screen is kept rather than turning the whole tab into an error.
   Future<void> _loadForecast() async {
-    SpendingPrediction prediction;
+    final api = getApiRepository();
     try {
-      prediction = await repo.fetchSpendingPrediction();
+      final results = await Future.wait([
+        api.fetchSpendingPrediction(),
+        api.fetchInrForecast(),
+      ]);
+      if (!mounted || _data == null) return;
+      final prediction = results[0] as SpendingPrediction;
+      final inr = results[1] as InrForecast;
+      final summary = _data!.summary.copyWith(
+        savings: inr.predictedSavings,
+        wellnessScore: inr.wellnessScore,
+        wellnessLevel: inr.wellnessLevel,
+      );
+      setState(() => _data = _data!.copyWith(
+            mlPrediction: prediction,
+            inrForecast: inr,
+            summary: summary,
+          ));
     } catch (_) {
-      return; // Backend unreachable -> keep the mock forecast.
+      return; // Backend unreachable -> keep the mock content.
     }
-    if (!mounted || _data == null) return;
-    setState(() => _data = _data!.copyWith(mlPrediction: prediction));
   }
 
   Future<void> _pickRange() async {

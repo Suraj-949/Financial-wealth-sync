@@ -1,0 +1,114 @@
+{
+  "model_name": "payment",
+  "algorithm": "XGBClassifier",
+  "version": "1.0",
+  "features": [
+    "amount",
+    "month",
+    "day_of_month",
+    "is_weekend",
+    "month_cash_flow_so_far",
+    "month_income_so_far",
+    "hist_UPI",
+    "hist_Debit_Card",
+    "hist_Cash",
+    "hist_Bank_Transfer",
+    "hist_total",
+    "txn_cat_Education",
+    "txn_cat_Entertainment",
+    "txn_cat_Food",
+    "txn_cat_Healthcare",
+    "txn_cat_Other",
+    "txn_cat_Rent",
+    "txn_cat_Savings",
+    "txn_cat_Travel",
+    "txn_cat_Utilities",
+    "cat_cum_Education",
+    "cat_cum_Entertainment",
+    "cat_cum_Food",
+    "cat_cum_Healthcare",
+    "cat_cum_Other",
+    "cat_cum_Rent",
+    "cat_cum_Savings",
+    "cat_cum_Travel",
+    "cat_cum_Utilities"
+  ],
+  "target": "payment_mode",
+  "target_description": "RULE-DERIVED (observed-behaviour) label: payment mode actually used on a transaction.",
+  "training_date": "2026-09-21",
+  "metrics": {
+    "val": {
+      "F1_weighted": 0.2717
+    },
+    "test": {
+      "Accuracy": 0.2373,
+      "Precision_weighted": 0.2335,
+      "Recall_weighted": 0.2373,
+      "F1_weighted": 0.2321
+    },
+    "test_per_class": {
+      "Bank Transfer": {
+        "precision": 0.2087,
+        "recall": 0.1304,
+        "f1-score": 0.1605
+      },
+      "Cash": {
+        "precision": 0.2545,
+        "recall": 0.3201,
+        "f1-score": 0.2836
+      },
+      "Debit Card": {
+        "precision": 0.2306,
+        "recall": 0.247,
+        "f1-score": 0.2385
+      },
+      "UPI": {
+        "precision": 0.2402,
+        "recall": 0.2518,
+        "f1-score": 0.2459
+      }
+    },
+    "algorithm_comparison": {
+      "XGBClassifier": {
+        "val_F1": 0.2717,
+        "final_params": {
+          "n_estimators": 200,
+          "learning_rate": 0.1,
+          "max_depth": 3,
+          "subsample": 1.0
+        }
+      },
+      "RandomForestClassifier": {
+        "val_F1": 0.2583,
+        "final_params": {
+          "n_estimators": 250,
+          "max_depth": 10,
+          "min_samples_leaf": 4
+        }
+      },
+      "LogisticRegression": {
+        "val_F1": 0.2599,
+        "final_params": {
+          "C": 1.0,
+          "max_iter": 2000,
+          "solver": "lbfgs"
+        }
+      }
+    }
+  },
+  "label_mapping": {
+    "0": "Bank Transfer",
+    "1": "Cash",
+    "2": "Debit Card",
+    "3": "UPI"
+  },
+  "notes": {
+    "chosen_algorithm_note": "Best of ['XGBClassifier', 'RandomForestClassifier', 'LogisticRegression'] by validation F1.",
+    "label_order_in_model": [
+      "Bank Transfer",
+      "Cash",
+      "Debit Card",
+      "UPI"
+    ]
+  }
+}

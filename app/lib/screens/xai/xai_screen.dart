@@ -25,16 +25,21 @@ class _XaiScreenState extends State<XaiScreen> {
     _load();
   }
 
+  /// Dashboard shell paints from the mock repository; SHAP drivers upgrade
+  /// best-effort from the live wellness model (`POST /explain/wellness`).
   Future<void> _load() async {
     try {
-      final results = await Future.wait([
-        repo.fetchDashboard(),
-        repo.fetchXaiFactors(),
-      ]);
+      final data = await repo.fetchDashboard();
+      List<ShapFactor> factors;
+      try {
+        factors = await getApiRepository().fetchXaiFactors();
+      } catch (_) {
+        factors = await repo.fetchXaiFactors();
+      }
       if (!mounted) return;
       setState(() {
-        _summary = ((results[0]) as dynamic).summary as FinancialSummary;
-        _factors = (results[1]) as List<ShapFactor>;
+        _summary = data.summary;
+        _factors = factors;
         _error = null;
       });
     } catch (e) {

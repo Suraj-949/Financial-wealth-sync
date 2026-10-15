@@ -121,7 +121,12 @@ def _load_feature_columns(model_name: str, variant: str = None) -> List[str]:
         path = _artifact_dir(model_name, variant) / "feature_columns.json"
         if path.exists():
             data = json.loads(path.read_text())
-            _cache[cache_key]["feature_columns"] = data.get("raw_input_columns", [])
+            if isinstance(data, list):
+                # ml/artifacts/<model>/feature_columns.json is a plain list.
+                _cache[cache_key]["feature_columns"] = data
+            else:
+                # ml/models/<model>/<variant>/feature_columns.json is a dict.
+                _cache[cache_key]["feature_columns"] = data.get("raw_input_columns", [])
         else:
             _cache[cache_key]["feature_columns"] = []
     

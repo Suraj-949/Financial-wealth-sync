@@ -1,0 +1,1 @@
+"""WealthSync model training package."""

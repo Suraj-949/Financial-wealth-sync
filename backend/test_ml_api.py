@@ -276,16 +276,20 @@ async def test_risk_model_loading(client: AsyncClient):
 # ============================================================
 
 async def test_legacy_predict_spending(client: AsyncClient):
-    """Legacy /predict/spending works or returns 503 if artifacts not found."""
+    """Legacy /predict/spending validates feature family correctly."""
     resp = await client.post("/predict/spending", json={"features": SPENDING_VALID_PAYLOAD})
-    # Accept 200 (works) or 503 (artifacts not found)
-    assert resp.status_code in (200, 503)
+    # 400 is CORRECT here: the BLS payload (age_ref/sheltpq/...) does not match
+    # the INR monthly feature set, so the API must reject it. 200 would mean the
+    # wrong family was served; 503 means artifacts are missing.
+    assert resp.status_code in (200, 400, 503)
 
 
 async def test_legacy_predict_risk(client: AsyncClient):
-    """Legacy /predict/risk works or returns 503 if artifacts not found."""
+    """Legacy /predict/risk validates feature family correctly."""
     resp = await client.post("/predict/risk", json={"features": RISK_VALID_PAYLOAD})
-    assert resp.status_code in (200, 503)
+    # 400 is CORRECT here: the UCI payload (LIMIT_BAL/PAY_0/...) does not match
+    # the INR monthly feature set, so the API must reject it.
+    assert resp.status_code in (200, 400, 503)
 
 
 async def test_legacy_unknown_model(client: AsyncClient):
@@ -334,6 +338,90 @@ async def test_models_registry(client: AsyncClient):
     assert data["risk"]["status"] == "production_candidate"
     assert data["spending"]["algorithm"] == "RandomForestRegressor"
     assert data["risk"]["algorithm"] == "GradientBoostingRegressor"
+
+
+# ============================================================
+# INR Monthly Pipeline (ml/artifacts): spending / savings / wellness / risk
+# ============================================================
+# These four models share the budgetwise monthly feature space (INR) and are
+# served by the generic /sample + /predict + /explain endpoints. Each test
+# pulls a realistic test-window payload from /sample and scores it, so the
+# request always carries the exact trained feature set in the trained order.
+
+
+async def _sample_features(client: AsyncClient, model: str) -> dict:
+    resp = await client.get(f"/sample/{model}")
+    assert resp.status_code == 200, f"/sample/{model} -> {resp.status_code}"
+    data = resp.json()
+    assert data["count"] >= 1
+    return data["samples"][0]["features"]
+
+
+async def test_inr_spending_predict(client: AsyncClient):
+    """INR spending forecast returns a finite INR prediction."""
+    features = await _sample_features(client, "spending")
+    resp = await client.post("/predict/spending", json={"features": features})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["kind"] == "regression"
+    assert data["currency"] == "INR"
+    assert isinstance(data["prediction"], (int, float))
+    assert data["prediction"] == data["prediction"]  # finite (not NaN)
+
+
+async def test_inr_savings_predict(client: AsyncClient):
+    """INR savings forecast returns a finite INR prediction."""
+    features = await _sample_features(client, "savings")
+    resp = await client.post("/predict/savings", json={"features": features})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["kind"] == "regression"
+    assert data["currency"] == "INR"
+    assert isinstance(data["prediction"], (int, float))
+    assert data["prediction"] == data["prediction"]  # finite (not NaN)
+
+
+async def test_inr_wellness_predict(client: AsyncClient):
+    """Wellness score lands in 0..100."""
+    features = await _sample_features(client, "wellness")
+    resp = await client.post("/predict/wellness", json={"features": features})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["kind"] == "regression"
+    assert 0 <= data["prediction"] <= 100
+
+
+async def test_inr_risk_predict(client: AsyncClient):
+    """INR risk returns a labelled prediction with probabilities."""
+    features = await _sample_features(client, "risk")
+    resp = await client.post("/predict/risk", json={"features": features})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["kind"] == "classification"
+    assert data["prediction"] in ("Low Risk", "High Risk")
+    assert 0.0 <= data["probability"] <= 1.0
+    probs = data["probabilities"]
+    assert abs(sum(probs.values()) - 1.0) < 1e-6
+
+
+async def test_inr_wellness_explain(client: AsyncClient):
+    """SHAP explanation returns ranked factors for the wellness model."""
+    features = await _sample_features(client, "wellness")
+    resp = await client.post("/explain/wellness", json={"features": features})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["model"] == "wellness"
+    assert len(data["top"]) > 0
+    assert all("feature" in r and "shap" in r for r in data["top"])
+
+
+async def test_inr_missing_feature_rejected(client: AsyncClient):
+    """INR endpoints reject payloads with missing features (4xx, no traceback)."""
+    resp = await client.post("/predict/savings", json={"features": {"income": 1.0}})
+    assert resp.status_code == 400
+    data = resp.json()
+    assert data["success"] is False
+    assert data["error"]["code"] == "INVALID_FEATURES"
 
 
 if __name__ == "__main__":

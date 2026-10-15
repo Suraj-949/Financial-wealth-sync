@@ -27,15 +27,19 @@ class _RiskAssessmentScreenState extends State<RiskAssessmentScreen> {
     _load();
   }
 
+  /// Live UCI pipeline (`POST /api/ml/risk/predict` + `POST /explain/risk`)
+  /// with offline fallback to the mock repository, so the screen always
+  /// renders even when the backend is unreachable.
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
+      final api = getApiRepository();
       final results = await Future.wait([
-        repo.fetchRiskPrediction(),
-        repo.fetchRiskExplanation(),
+        api.fetchRiskPrediction(),
+        api.fetchRiskExplanation(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -43,12 +47,25 @@ class _RiskAssessmentScreenState extends State<RiskAssessmentScreen> {
         _explanation = results[1] as ShapExplanation;
         _loading = false;
       });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+    } catch (_) {
+      try {
+        final results = await Future.wait([
+          repo.fetchRiskPrediction(),
+          repo.fetchRiskExplanation(),
+        ]);
+        if (!mounted) return;
+        setState(() {
+          _prediction = results[0] as RiskPrediction;
+          _explanation = results[1] as ShapExplanation;
+          _loading = false;
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 

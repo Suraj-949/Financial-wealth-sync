@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from . import services
+from . import services, samples
 from .schemas import (
     SpendingPredictRequest, SpendingPredictResponse,
     RiskPredictRequest, RiskPredictResponse,
@@ -119,7 +119,7 @@ def models() -> dict:
 @app.get("/sample/{model}")
 async def sample(model: str) -> dict:
     try:
-        payloads = services.samples.sample_payloads(model)
+        payloads = samples.sample_payloads(model)
     except ValueError as e:
         raise HTTPException(404, str(e))
     return {"model": model, "count": len(payloads), "samples": payloads}
@@ -139,7 +139,7 @@ async def predict_spending(request: SpendingPredictRequest) -> dict:
         result = services.predict_spending(features)
         return {"success": True, "data": result}
     except ValueError as e:
-        raise HTTPException(400, {"code": "INVALID_FEATURES", "message": str(e)})
+        return JSONResponse(status_code=400, content={"success": False, "error": {"code": "INVALID_FEATURES", "message": str(e)}})
     except Exception as e:
         import logging
         logging.error(f"Spending prediction failed: {e}")
@@ -160,7 +160,7 @@ async def predict_risk(request: RiskPredictRequest) -> dict:
         result = services.predict_risk(features)
         return {"success": True, "data": result}
     except ValueError as e:
-        raise HTTPException(400, {"code": "INVALID_FEATURES", "message": str(e)})
+        return JSONResponse(status_code=400, content={"success": False, "error": {"code": "INVALID_FEATURES", "message": str(e)}})
     except Exception as e:
         import logging
         logging.error(f"Risk prediction failed: {e}")
@@ -175,7 +175,7 @@ async def predict(model: str, payload: dict) -> dict:
     try:
         result = services.predict(model, payload.get("features", payload))
     except ValueError as e:
-        raise HTTPException(400, {"code": "INVALID_FEATURES", "message": str(e)})
+        return JSONResponse(status_code=400, content={"success": False, "error": {"code": "INVALID_FEATURES", "message": str(e)}})
     except FileNotFoundError:
         raise HTTPException(503, {"code": "MODEL_UNAVAILABLE", "message": f"Legacy model '{model}' artifacts not found"})
     except Exception as e:
@@ -190,7 +190,7 @@ async def explain(model: str, payload: dict) -> dict:
     try:
         result = services.explain(model, payload.get("features", payload))
     except ValueError as e:
-        raise HTTPException(400, {"code": "INVALID_FEATURES", "message": str(e)})
+        return JSONResponse(status_code=400, content={"success": False, "error": {"code": "INVALID_FEATURES", "message": str(e)}})
     except Exception as e:
         raise HTTPException(500, {"code": "EXPLAIN_FAILED", "message": f"Explain failed: {e}"})
     return result

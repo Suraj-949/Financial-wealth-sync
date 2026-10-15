@@ -2,10 +2,24 @@
 
 ## Overview
 
-This document describes the ML prediction API layer for the WealthSync project. The API exposes two production-ready ML models as REST endpoints:
+This document describes the ML prediction API layer for the WealthSync project. The API serves **two model families** — never mix their units:
 
-1. **Spending Prediction** - Random Forest Regressor predicting next-quarter total expenditure
-2. **Risk Prediction** - Gradient Boosting Regressor predicting default probability
+1. **BLS/UCI production models** (`ml/models/`): spending Random Forest (next-quarter USD)
+   and risk Gradient Boosting (default probability → 0-100 score).
+2. **INR monthly models** (`ml/artifacts/`): spending, savings, wellness and risk
+   (budgetwise monthly features, INR + 0-100 wellness), served by the generic
+   `GET /sample/{model}` → `POST /predict/{model}` (+ `POST /explain/{model}`) pipeline
+   that the Flutter dashboard consumes.
+
+Endpoints at a glance:
+
+| Family | Endpoint | Input | Output |
+|---|---|---|---|
+| BLS | `POST /api/ml/spending/predict` | 22 CE raw features | quarterly USD |
+| UCI | `POST /api/ml/risk/predict` | 26 UCI raw features | probability + 0-100 score/level |
+| INR | `GET /sample/{spending,savings,wellness,risk}` | — | 5 test-window feature rows + actuals |
+| INR | `POST /predict/{spending,savings,wellness,risk}` | `{features: {...}}` | prediction (INR / 0-100 / label) |
+| INR | `POST /explain/{spending,savings,wellness,risk}` | `{features: {...}}` | ranked SHAP factors |
 
 ## Model Locations
 

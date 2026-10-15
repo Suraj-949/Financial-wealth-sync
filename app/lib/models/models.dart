@@ -82,6 +82,32 @@ class FinancialSummary {
     required this.wellnessDelta,
     required this.wellnessPrev,
   });
+
+  FinancialSummary copyWith({
+    double? income,
+    double? incomeDeltaPct,
+    double? expenses,
+    double? expensesDeltaPct,
+    double? savings,
+    double? savingsDeltaPct,
+    int? wellnessScore,
+    String? wellnessLevel,
+    int? wellnessDelta,
+    int? wellnessPrev,
+  }) {
+    return FinancialSummary(
+      income: income ?? this.income,
+      incomeDeltaPct: incomeDeltaPct ?? this.incomeDeltaPct,
+      expenses: expenses ?? this.expenses,
+      expensesDeltaPct: expensesDeltaPct ?? this.expensesDeltaPct,
+      savings: savings ?? this.savings,
+      savingsDeltaPct: savingsDeltaPct ?? this.savingsDeltaPct,
+      wellnessScore: wellnessScore ?? this.wellnessScore,
+      wellnessLevel: wellnessLevel ?? this.wellnessLevel,
+      wellnessDelta: wellnessDelta ?? this.wellnessDelta,
+      wellnessPrev: wellnessPrev ?? this.wellnessPrev,
+    );
+  }
 }
 
 class SpendingCategory {
@@ -227,4 +253,122 @@ class CopilotMessage {
   final DateTime time;
 
   const CopilotMessage({required this.text, required this.fromUser, required this.time});
+}
+
+/// BLS spending forecast (quarterly, USD) from `POST /api/ml/spending/predict`.
+///
+/// Rendered with its own currency/horizon — never plotted on the monthly INR
+/// history, which uses a different unit and cadence.
+class SpendingPrediction {
+  final double predictedSpending;
+  final String currency;
+  final String unit;
+  final String note;
+
+  const SpendingPrediction({
+    required this.predictedSpending,
+    required this.currency,
+    required this.unit,
+    required this.note,
+  });
+
+  factory SpendingPrediction.fromJson(Map<String, dynamic> json) {
+    return SpendingPrediction(
+      predictedSpending: (json['prediction'] as num).toDouble(),
+      currency: (json['currency'] as String?) ?? 'USD',
+      unit: (json['unit'] as String?) ?? 'dollars',
+      note: (json['note'] as String?) ?? '',
+    );
+  }
+}
+
+/// INR monthly forecast bundle from `POST /predict/{spending,savings,wellness}`.
+///
+/// All three models share the budgetwise monthly feature space, so one sample
+/// row per model fully determines the bundle. Values are in INR (or 0-100 for
+/// the rule-derived wellness label).
+class InrForecast {
+  final double predictedSpending;
+  final double predictedSavings;
+  final int wellnessScore;
+  final String wellnessLevel;
+  final String note;
+
+  const InrForecast({
+    required this.predictedSpending,
+    required this.predictedSavings,
+    required this.wellnessScore,
+    required this.wellnessLevel,
+    this.note = '',
+  });
+
+  static String levelFor(int score) {
+    if (score >= 75) return 'Good';
+    if (score >= 50) return 'Moderate';
+    return 'At Risk';
+  }
+}
+
+/// UCI credit-risk prediction from `POST /api/ml/risk/predict`.
+///
+/// `riskScore` is `defaultProbability * 100`; bands are Low 0-30,
+/// Medium 31-60, High 61-100 (interpretation only, not a trained target).
+class RiskPrediction {
+  final double defaultProbability;
+  final double riskScore;
+  final String riskLevel;
+  final String note;
+
+  const RiskPrediction({
+    required this.defaultProbability,
+    required this.riskScore,
+    required this.riskLevel,
+    required this.note,
+  });
+
+  factory RiskPrediction.fromJson(Map<String, dynamic> json) {
+    return RiskPrediction(
+      defaultProbability: (json['default_probability'] as num).toDouble(),
+      riskScore: (json['risk_score'] as num).toDouble(),
+      riskLevel: (json['risk_level'] as String?) ?? 'Medium',
+      note: (json['note'] as String?) ?? '',
+    );
+  }
+}
+
+/// One ranked SHAP contribution. Field names mirror what the risk/XAI screens
+/// render; the backend returns `{feature, value, shap}` and the repository
+/// maps `feature -> transformedFeature`, `value -> rawInputReference`.
+class ShapExplanationItem {
+  final double shap;
+  final String transformedFeature;
+  final String rawInputReference;
+
+  const ShapExplanationItem({
+    required this.shap,
+    required this.transformedFeature,
+    required this.rawInputReference,
+  });
+
+  factory ShapExplanationItem.fromBackend(Map<String, dynamic> json) {
+    return ShapExplanationItem(
+      shap: (json['shap'] as num).toDouble(),
+      transformedFeature: (json['feature'] as String?) ?? '',
+      rawInputReference: '${json['value'] ?? ''}',
+    );
+  }
+}
+
+/// Ranked SHAP explanation from `POST /explain/{model}`.
+class ShapExplanation {
+  final List<ShapExplanationItem> top;
+
+  const ShapExplanation({required this.top});
+
+  factory ShapExplanation.fromJson(Map<String, dynamic> json) {
+    final raw = (json['top'] as List<dynamic>? ?? const []);
+    return ShapExplanation(
+      top: raw.map((e) => ShapExplanationItem.fromBackend((e as Map).cast<String, dynamic>())).toList(),
+    );
+  }
 }

@@ -1,0 +1,31 @@
+# Environment configuration
+.env
+.env.*
+!.env.example
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test and coverage outputs
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Type-checker and linter caches
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# Local logs
+*.log
