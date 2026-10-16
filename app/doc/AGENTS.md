@@ -35,7 +35,7 @@ Scope: `app/` — the Flutter mobile app (Android-first, dark fintech theme).
 - `lib/services/mock_data.dart` — demo data (labelled).
 - `lib/models/models.dart` — all domain types.
 - Screens: `screens/dashboard/`, `transactions/`, `budget/`, `goals/`, `more/`, `accounts/`,
-  `alerts/`, `recommendations/`, `copilot/`, `xai/`, `profile/`, `stub/`.
+  `alerts/`, `recommendations/`, `copilot/`, `xai/`, `sms/`, `profile/`, `stub/`.
 - Tests: `test/widget_test.dart` (pumps `WealthSyncApp` through the dashboard; no repo injection needed).
 
 ## Verify before finishing

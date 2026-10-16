@@ -20,8 +20,8 @@ Scope: `backend/` (FastAPI service) + the `ml/` pipeline it consumes.
    `ml/` produces artifacts (`model.joblib`, `scaler.pkl`, `feature_columns.json`,
    `label_mapping.json`, `model_metadata.json`); `backend/` only loads and scores.
 2. **Keep the contract stable.** `main.py` endpoints `/health`, `/models`, `/sample/{model}`,
-   `/predict/{model}`, `/explain/{model}` are consumed by the Flutter app — do not rename/remove
-   without updating `app/lib/services/finance_repository.dart`.
+   `/predict/{model}`, `/explain/{model}`, `/api/sms/classify` are consumed by the Flutter app —
+   do not rename/remove without updating `app/lib/services/finance_repository.dart`.
 3. **Report model limits honestly.** Never return inflated confidence. Debug/`/models` metadata
    reflects real training metrics (payment near-random; spending/savings R² weak; wellness label
    is rule-derived).
@@ -29,17 +29,26 @@ Scope: `backend/` (FastAPI service) + the `ml/` pipeline it consumes.
    use `from . import services`.
 5. **No synthetic data.** Predictions come from models; samples come from real test-window rows.
 
-## Layout (backend + consumed ml artifacts)
+## Layout (backend + consumed ml / sms artifacts)
 - `backend/main.py` — routes + CORS + `/docs` wiring.
 - `backend/services.py` — `PredictionService`: artifact loading + predict/explain.
 - `backend/samples.py` — test-window sample payloads per model.
+- `backend/sms_service.py` — adapter over the `sms/` package (spam filter → categoriser).
 - `backend/requirements.txt` / `run_backend.ps1` — deps + run script.
 - `ml/artifacts/<model>/*` — the files the backend serves (see `ml/README.md`).
+- `sms/artifacts/*` — the two-stage SMS pipeline the backend serves (see `sms/README.md`).
+
+## SMS pipeline
+- Logic + dataset live in `sms/sms_classifier.py`; artifacts in `sms/artifacts/`.
+- Trained once and persisted; the backend **never retrains** on request.
+- Verify: `POST /api/sms/classify` with a credited SMS (→ `credit`), a lottery SMS
+  (→ discarded), and a spend SMS (→ `debit`).
 
 ## Verify before finishing
 Every change to `backend/`: restart uvicorn, hit `/health` and `/models`, then run one
 `/predict/{model}` + `/explain/{model}` and confirm the response shape is unchanged.
 
 ## Status
-- All 5 models trained, evaluated, SHAP'd; backend serving on `:8000`.
+- All 5 models trained, evaluated, SHAP'd; SMS two-stage classifier integrated.
+- Backend serving on `:8000`.
 - Next: `GET /api/dashboard` aggregate + copilot grounding pipeline.

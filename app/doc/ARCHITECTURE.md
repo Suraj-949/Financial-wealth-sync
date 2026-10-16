@@ -28,7 +28,8 @@ app/
 │   │                           #   BudgetItem, Goal, AiInsight, PaymentOffer/Suggestion,
 │   │                           #   Recommendation, AlertItem, ShapFactor, CopilotReply/Message,
 │   │                           #   SpendingPrediction (BLS USD), InrForecast (monthly INR),
-│   │                           #   RiskPrediction (UCI), ShapExplanation(Item)
+│   │                           #   RiskPrediction (UCI), ShapExplanation(Item),
+│   │                           #   SmsClassification (spam + credit/debit/other)
 │   │
 │   ├── services/
 │   │   ├── finance_repository.dart   # FinanceRepository (abstract) + DashboardData aggregate,
@@ -55,6 +56,7 @@ app/
 │       ├── recommendations/recommendations_screen.dart  # category filter + actions
 │       ├── copilot/copilot_chat_screen.dart         # grounded chat UI (renders CopilotReply)
 │       ├── xai/xai_screen.dart                      # wellness ring + SHAP bars
+│       ├── sms/sms_classifier_screen.dart           # paste SMS → spam/category result
 │       ├── profile/profile_screen.dart              # user card + rows
 │       └── stub/stub_screen.dart                    # placeholder for upcoming features
 ├── test/
@@ -67,7 +69,8 @@ app/
 `fetchRecommendations`, `fetchAlerts`, `fetchAccounts`, `fetchXaiFactors`, `fetchPaymentOffers`,
 `copilotAsk`, plus the ML surface: `fetchSpendingPrediction` (BLS USD),
 `fetchInrForecast` (INR spending/savings/wellness bundle), `fetchRiskPrediction`
-+ `fetchRiskExplanation` (UCI).
++ `fetchRiskExplanation` (UCI), and `classifySms` (two-stage SMS pipeline:
+`POST /api/sms/classify`, with an on-device keyword fallback when offline).
 
 `DashboardData` aggregates: `summary` (income/expenses/savings/wellness + deltas), `categories`
 (donut), `historicExpense` + `predictedExpense` + `predictionConfidence` + `monthLabels`,
@@ -75,11 +78,12 @@ app/
 `mlPrediction` (BLS quarterly USD card) and `inrForecast` (monthly INR bundle that
 also upgrades `summary.savings` / `summary.wellnessScore`).
 
-## ML pipeline (two model families — do not mix their units)
+## ML pipeline (three model families — do not mix their units)
 | Family | Models | Endpoints | Units | Used by |
 |---|---|---|---|---|
 | BLS/UCI (`ml/models/`) | spending RF, risk GBM | `POST /api/ml/spending/predict`, `POST /api/ml/risk/predict` | USD quarterly / 0-100 score | PredictionCard, Risk screen |
 | INR monthly (`ml/artifacts/`) | spending, savings, wellness, risk | `GET /sample/{model}` → `POST /predict/{model}` (+ `POST /explain/{model}`) | INR monthly / 0-100 | Dashboard summary, XAI screen |
+| SMS text (`sms/`) | spam filter → category | `POST /api/sms/classify` (+ `/batch`, `/health`) | status + credit/debit/other + % | SMS Classifier screen |
 
 `getRepository()` returns the offline mock (tests stay hermetic). Screens call
 `getApiRepository()` best-effort and keep mock content on failure — never turn a

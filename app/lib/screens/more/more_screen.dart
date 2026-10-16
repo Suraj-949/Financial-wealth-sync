@@ -5,6 +5,7 @@ import '../../widgets/common.dart';
 import '../alerts/alerts_screen.dart';
 import '../copilot/copilot_chat_screen.dart';
 import '../profile/profile_screen.dart';
+import '../sms/sms_classifier_screen.dart';
 import '../stub/stub_screen.dart';
 
 class MoreScreen extends StatelessWidget {
@@ -52,6 +53,12 @@ class MoreScreen extends StatelessWidget {
         color: AppColors.accent,
         title: 'AI Copilot',
         page: const CopilotChatScreen()
+      ),
+      (
+        icon: Icons.mark_email_unread_outlined,
+        color: AppColors.savings,
+        title: 'SMS Payments',
+        page: const SmsClassifierScreen()
       ),
       (
         icon: Icons.settings_outlined,

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the ML prediction API layer for the WealthSync project. The API serves **two model families** — never mix their units:
+This document describes the ML prediction API layer for the WealthSync project. The API serves **three model families** — never mix their units:
 
 1. **BLS/UCI production models** (`ml/models/`): spending Random Forest (next-quarter USD)
    and risk Gradient Boosting (default probability → 0-100 score).
@@ -10,6 +10,8 @@ This document describes the ML prediction API layer for the WealthSync project. 
    (budgetwise monthly features, INR + 0-100 wellness), served by the generic
    `GET /sample/{model}` → `POST /predict/{model}` (+ `POST /explain/{model}`) pipeline
    that the Flutter dashboard consumes.
+3. **SMS text classifier** (`sms/`): a two-stage TF-IDF + Naive Bayes pipeline
+   (spam/noise filter → credit/debit/other), served by `/api/sms/*`.
 
 Endpoints at a glance:
 
@@ -20,6 +22,9 @@ Endpoints at a glance:
 | INR | `GET /sample/{spending,savings,wellness,risk}` | — | 5 test-window feature rows + actuals |
 | INR | `POST /predict/{spending,savings,wellness,risk}` | `{features: {...}}` | prediction (INR / 0-100 / label) |
 | INR | `POST /explain/{spending,savings,wellness,risk}` | `{features: {...}}` | ranked SHAP factors |
+| SMS | `POST /api/sms/classify` | `{text}` | status + category + confidences |
+| SMS | `POST /api/sms/classify/batch` | `{messages: [...]}` | `{count, results: [...]}` |
+| SMS | `GET /api/sms/health` | — | pipeline availability + metadata |
 
 ## Model Locations
 
@@ -311,16 +316,60 @@ C:/Users/SURAJ/anaconda3/python.exe -m pytest backend/test_ml_api.py -v
 ### Model Artifacts
 The legacy models in `ml/artifacts/` are not included in this repo. The legacy endpoints (`/predict/{model}`, `/explain/{model}`, `/sample/{model}`) return 503 if artifacts are not found.
 
+## SMS Transaction Classifier (`/api/sms/*`)
+
+A two-stage text pipeline (see `sms/README.md`). Stage 1 is a spam/noise filter
+(binary), stage 2 labels legitimate transactions `credit` / `debit` / `other`.
+Both stages are `TfidfVectorizer(ngram_range=(1, 2))` + `MultinomialNB(alpha=0.1)`.
+Artifacts are trained once and persisted to `sms/artifacts/`; the backend loads
+them lazily and **never retrains** on request.
+
+#### POST `/api/sms/classify`
+**Request:** `{ "text": "ALERT: Acct *112 has been credited with USD 450.00." }`
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "text": "ALERT: Acct *112 has been credited with USD 450.00.",
+    "is_spam": false,
+    "is_transaction": true,
+    "status": "APPROVED (TRANSACTION)",
+    "category": "credit",
+    "display_category": "Credit",
+    "confidence": 94.56,
+    "spam_probability": 0.95,
+    "category_probabilities": {"credit": 94.56, "debit": 3.4, "other": 2.04}
+  }
+}
+```
+
+- `status` is `APPROVED (TRANSACTION)` or `DISCARDED (SPAM/NOISE)`.
+- `category` is `credit` / `debit` / `other`, or `N/A` when discarded.
+- `confidence` is the decisive stage's percentage; `spam_probability` is P(spam)
+  from stage 1 regardless of the prediction (a legitimate SMS shows a low value).
+- `category_probabilities` is empty when the message is discarded.
+
+#### POST `/api/sms/classify/batch`
+**Request:** `{ "messages": ["...", "..."] }` → `{ "data": { "count": 2, "results": [ ... ] } }` (order preserved).
+
+#### GET `/api/sms/health`
+Returns `{ "sms": { "status": "available", "categories": ["credit","debit","other"], ... } }`.
+
+Empty / whitespace-only text and empty batches return `400` with the standard
+`{ "success": false, "error": { "code", "message" } }` envelope.
+
 ## Architecture
 
 ```
-API Route (/api/ml/...)
+API Route (/api/ml/... or /api/sms/...)
     ↓
 Request Schema / Validation (Pydantic)
     ↓
-ML Service (services.py)
+ML Service (services.py) / SMS Service (sms_service.py)
     ↓
-Loaded Model (cached Pipeline)
+Loaded Model (cached Pipeline) / Cached SMS pipeline (sms/artifacts)
     ↓
 Prediction
     ↓
@@ -330,6 +379,8 @@ Response Schema
 Key files:
 - `backend/main.py` - FastAPI routes and exception handlers
 - `backend/services.py` - Model loading, caching, prediction logic
+- `backend/sms_service.py` - SMS two-stage classifier adapter (`sms/` package)
 - `backend/schemas.py` - Pydantic request/response schemas
-- `backend/test_ml_api.py` - Test suite
+- `backend/test_ml_api.py` / `backend/test_sms_api.py` - Test suites
 - `ml/models/{spending,risk}/...` - Model artifacts
+- `sms/artifacts/...` - SMS pipeline artifacts

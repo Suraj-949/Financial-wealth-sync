@@ -372,3 +372,53 @@ class ShapExplanation {
     );
   }
 }
+
+/// SMS classification result from `POST /api/sms/classify`.
+///
+/// Two-stage pipeline: stage 1 ([isSpam]) filters noise, stage 2 assigns a
+/// financial [category] (`credit` / `debit` / `other`). [confidence] is the
+/// percentage of the decisive stage; [spamProbability] is P(spam) from stage 1
+/// regardless of the prediction.
+class SmsClassification {
+  final String text;
+  final bool isSpam;
+  final bool isTransaction;
+  final String status;
+  final String category; // credit | debit | other | N/A
+  final String displayCategory;
+  final double confidence;
+  final double spamProbability;
+  final Map<String, double> categoryProbabilities;
+
+  const SmsClassification({
+    required this.text,
+    required this.isSpam,
+    required this.isTransaction,
+    required this.status,
+    required this.category,
+    required this.displayCategory,
+    required this.confidence,
+    required this.spamProbability,
+    this.categoryProbabilities = const {},
+  });
+
+  bool get isCredit => category == 'credit';
+  bool get isDebit => category == 'debit';
+
+  factory SmsClassification.fromJson(Map<String, dynamic> json) {
+    final rawProbs = (json['category_probabilities'] as Map?) ?? const {};
+    return SmsClassification(
+      text: (json['text'] as String?) ?? '',
+      isSpam: (json['is_spam'] as bool?) ?? false,
+      isTransaction: (json['is_transaction'] as bool?) ?? false,
+      status: (json['status'] as String?) ?? '',
+      category: (json['category'] as String?) ?? 'N/A',
+      displayCategory: (json['display_category'] as String?) ?? 'Unknown',
+      confidence: ((json['confidence'] as num?) ?? 0).toDouble(),
+      spamProbability: ((json['spam_probability'] as num?) ?? 0).toDouble(),
+      categoryProbabilities: rawProbs.map(
+        (k, v) => MapEntry(k.toString(), (v as num).toDouble()),
+      ),
+    );
+  }
+}

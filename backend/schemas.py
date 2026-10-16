@@ -123,3 +123,50 @@ class ErrorResponse(BaseModel):
     success: bool = False
     error: Dict[str, str]
     data: Optional[Dict[str, Any]] = None
+
+
+# ---------------------------------------------------------------------------
+# SMS transaction classifier (two-stage text pipeline)
+# ---------------------------------------------------------------------------
+
+
+class SmsClassifyRequest(BaseModel):
+    """Request schema for a single SMS classification."""
+
+    text: str = Field(..., description="Raw SMS message text")
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("text")
+    @classmethod
+    def _non_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("SMS text must not be empty")
+        return value
+
+
+class SmsBatchClassifyRequest(BaseModel):
+    """Request schema for batch SMS classification."""
+
+    messages: List[str] = Field(..., min_length=1, description="Raw SMS messages")
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("messages")
+    @classmethod
+    def _non_empty_items(cls, values: List[str]) -> List[str]:
+        if not values:
+            raise ValueError("messages must contain at least one SMS")
+        cleaned = [v.strip() for v in values]
+        if any(not v for v in cleaned):
+            raise ValueError("SMS messages must not be empty")
+        return cleaned
+
+
+class SmsClassifyResponse(BaseModel):
+    """Response schema for SMS classification (single or batch)."""
+
+    success: bool = True
+    data: Dict[str, Any]
+    error: Optional[Dict[str, str]] = None

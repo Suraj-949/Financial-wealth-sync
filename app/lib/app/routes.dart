@@ -11,6 +11,7 @@ class AppRoutes {
   static const recommendations = '/recommendations';
   static const xai = '/xai';
   static const copilot = '/copilot';
+  static const sms = '/sms';
 
   static const investments = '/investments';
   static const loans = '/loans';

@@ -10,6 +10,7 @@ backend/
 ├── services.py          # PredictionService: loads model.joblib / scaler.pkl /
 │                        #   feature_columns.json / label_mapping.json → predict + explain
 ├── samples.py           # test-window feature payloads per model
+├── sms_service.py       # adapter over the sms/ package (spam → credit/debit/other)
 ├── requirements.txt     # fastapi, uvicorn
 ├── run_backend.ps1      # uvicorn on :8000 + opens /docs
 └── doc/                 # backend-scoped docs (BUSINESS, AGENTS, ARCHITECTURE)
@@ -24,6 +25,9 @@ backend/
 | GET | `/sample/{model}` | – | `{ "samples": [...] }` test-window features |
 | POST | `/predict/{model}` | `features: {...}` | predictions |
 | POST | `/explain/{model}` | `features: {...}` | SHAP explanation |
+| GET | `/api/sms/health` | – | SMS pipeline availability + metadata |
+| POST | `/api/sms/classify` | `text` | spam status + category + confidences |
+| POST | `/api/sms/classify/batch` | `messages: [...]` | `{ count, results }` |
 
 ## Artifacts the backend consumes (`ml/artifacts/<model>/`)
 
@@ -44,9 +48,21 @@ client → POST /predict/{model}
 
 client → POST /explain/{model}
        → services.py → SHAP values → per-feature attribution → JSON response
+
+client → POST /api/sms/classify
+       → sms_service.py → sms/ package (spam filter → categoriser)
+       → text preprocessing → TF-IDF → Naive Bayes → JSON response
 ```
+
+## SMS artifacts (`sms/artifacts/`)
+- `spam_vectorizer.joblib` + `spam_model.joblib` — stage 1 (binary spam filter)
+- `category_vectorizer.joblib` + `category_model.joblib` — stage 2 (credit/debit/other)
+- `metadata.json` — algorithm, classes, sample counts, train accuracy
+
+Trained once by `sms/sms_classifier.py` (`SmsClassifier.train().save()`); the
+backend loads them lazily via `sms_service.py` and never retrains on request.
 
 ## Conventions
 - Python interpreter: `C:\Users\SURAJ\anaconda3\python.exe` (system `python` is blocked).
 - Relative imports inside `backend\` (`from . import services`).
-- No training code lives here — training stays in `ml/`.
+- No training code lives here — training stays in `ml/` (features/estimators) and `sms/`.

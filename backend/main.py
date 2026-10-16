@@ -26,10 +26,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from . import services, samples
+from . import services, samples, sms_service
 from .schemas import (
     SpendingPredictRequest, SpendingPredictResponse,
     RiskPredictRequest, RiskPredictResponse,
+    SmsClassifyRequest, SmsBatchClassifyRequest, SmsClassifyResponse,
     ModelHealthResponse, ErrorResponse
 )
 
@@ -94,7 +95,7 @@ app.add_middleware(
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "models": list(services.PRODUCTION_MODELS.keys())}
+    return {"status": "ok", "models": list(services.PRODUCTION_MODELS.keys()) + ["sms"]}
 
 
 @app.get("/health/models", response_model=ModelHealthResponse)
@@ -194,3 +195,41 @@ async def explain(model: str, payload: dict) -> dict:
     except Exception as e:
         raise HTTPException(500, {"code": "EXPLAIN_FAILED", "message": f"Explain failed: {e}"})
     return result
+
+
+# ---- SMS Transaction Classifier (two-stage text pipeline) ----
+
+@app.get("/api/sms/health")
+def sms_health() -> dict:
+    """Availability + metadata for the SMS spam/category pipeline."""
+    try:
+        return {"success": True, "sms": sms_service.sms_health()}
+    except Exception as e:
+        raise HTTPException(500, {"code": "SMS_UNAVAILABLE", "message": f"SMS model unavailable: {e}"})
+
+
+@app.post("/api/sms/classify", response_model=SmsClassifyResponse)
+async def sms_classify(request: SmsClassifyRequest) -> dict:
+    """Classify one raw SMS: spam/noise filter, then credit/debit/other category."""
+    try:
+        return {"success": True, "data": sms_service.classify_sms(request.text)}
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"success": False, "error": {"code": "INVALID_SMS", "message": str(e)}})
+    except Exception as e:
+        import logging
+        logging.error(f"SMS classification failed: {e}")
+        raise HTTPException(500, {"code": "SMS_FAILED", "message": "SMS classification service temporarily unavailable"})
+
+
+@app.post("/api/sms/classify/batch", response_model=SmsClassifyResponse)
+async def sms_classify_batch(request: SmsBatchClassifyRequest) -> dict:
+    """Classify a batch of raw SMS messages (order preserved)."""
+    try:
+        results = sms_service.classify_sms_batch(request.messages)
+        return {"success": True, "data": {"count": len(results), "results": results}}
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"success": False, "error": {"code": "INVALID_SMS", "message": str(e)}})
+    except Exception as e:
+        import logging
+        logging.error(f"SMS batch classification failed: {e}")
+        raise HTTPException(500, {"code": "SMS_FAILED", "message": "SMS classification service temporarily unavailable"})

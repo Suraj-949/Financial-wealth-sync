@@ -100,6 +100,10 @@ abstract class FinanceRepository {
   /// Ranked SHAP drivers for the UCI risk model (`POST /explain/risk`).
   /// Falls back to wellness drivers when the risk explainer is unavailable.
   Future<ShapExplanation> fetchRiskExplanation();
+
+  /// Two-stage SMS classifier (`POST /api/sms/classify`).
+  /// Stage 1 filters spam/noise, stage 2 assigns credit/debit/other.
+  Future<SmsClassification> classifySms(String text);
 }
 
 /// In-memory repository used while backend endpoints are being stood up.
@@ -254,6 +258,74 @@ class MockFinanceRepository implements FinanceRepository {
                 ))
             .toList(),
       ));
+
+  /// Offline stand-in for the SMS pipeline. Keyword rules mirror the trained
+  /// model's decision boundaries closely enough for UI development/tests; the
+  /// live model runs on the backend via [ApiFinanceRepository].
+  @override
+  Future<SmsClassification> classifySms(String text) => _slow(_mockClassify(text));
+}
+
+const _spamKeywords = ['congratulations', 'won', 'lottery', 'gift card', 'click here', 'claim', 'free', 'otp', 'suspicious', 'verify'];
+const _creditKeywords = ['credited', 'credit', 'received', 'salary', 'deposited', 'deposit', 'refund', 'paycheck'];
+const _debitKeywords = ['debited', 'debit', 'spent', 'charged', 'purchase', 'sent', 'paid', 'txn', 'payment'];
+
+SmsClassification _mockClassify(String rawText) {
+  final text = rawText.trim();
+  final lower = text.toLowerCase();
+  final spam = _spamKeywords.any(lower.contains);
+
+  if (spam) {
+    return SmsClassification(
+      text: text,
+      isSpam: true,
+      isTransaction: false,
+      status: 'DISCARDED (SPAM/NOISE)',
+      category: 'N/A',
+      displayCategory: 'Spam / Noise',
+      confidence: 88.0,
+      spamProbability: 88.0,
+    );
+  }
+
+  if (_creditKeywords.any(lower.contains)) {
+    return SmsClassification(
+      text: text,
+      isSpam: false,
+      isTransaction: true,
+      status: 'APPROVED (TRANSACTION)',
+      category: 'credit',
+      displayCategory: 'Credit',
+      confidence: 91.0,
+      spamProbability: 4.0,
+      categoryProbabilities: const {'credit': 91.0, 'debit': 6.0, 'other': 3.0},
+    );
+  }
+
+  if (_debitKeywords.any(lower.contains)) {
+    return SmsClassification(
+      text: text,
+      isSpam: false,
+      isTransaction: true,
+      status: 'APPROVED (TRANSACTION)',
+      category: 'debit',
+      displayCategory: 'Debit',
+      confidence: 89.0,
+      spamProbability: 6.0,
+      categoryProbabilities: const {'credit': 5.0, 'debit': 89.0, 'other': 6.0},
+    );
+  }
+
+  return SmsClassification(
+    text: text,
+    isSpam: true,
+    isTransaction: false,
+    status: 'DISCARDED (SPAM/NOISE)',
+    category: 'N/A',
+    displayCategory: 'Spam / Noise',
+    confidence: 70.0,
+    spamProbability: 70.0,
+  );
 }
 
 /// Access point for the rest of the app.
@@ -443,6 +515,17 @@ class ApiFinanceRepository implements FinanceRepository {
       return _fallback.fetchXaiFactors();
     }
   }
+
+  @override
+  Future<SmsClassification> classifySms(String text) async {
+    try {
+      return await ApiClient.instance.classifySms(text).timeout(_timeout);
+    } catch (_) {
+      // Backend unreachable: fall back to the on-device heuristic so the
+      // interactive screen still responds.
+      return _fallback.classifySms(text);
+    }
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -530,6 +613,13 @@ class ApiClient {
   Future<ShapExplanation> explainModel(String model, Map<String, double> features) async {
     final res = await explain(model, features);
     return ShapExplanation.fromJson(res);
+  }
+
+  /// Two-stage SMS classification (`POST /api/sms/classify`).
+  Future<SmsClassification> classifySms(String text) async {
+    final res = await _post('/api/sms/classify', {'text': text});
+    final data = ((res as Map)['data'] as Map).cast<String, dynamic>();
+    return SmsClassification.fromJson(data);
   }
 
   Future<dynamic> _get(String path) async {

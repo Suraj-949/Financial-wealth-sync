@@ -1,0 +1,21 @@
+{
+  "algorithm": "MultinomialNB(alpha=0.1) + TfidfVectorizer(ngram_range=(1, 2))",
+  "stages": [
+    "spam_filter",
+    "categorizer"
+  ],
+  "spam_classes": [
+    0,
+    1
+  ],
+  "category_classes": [
+    "credit",
+    "debit",
+    "other"
+  ],
+  "spam_train_samples": 13,
+  "category_train_samples": 18,
+  "spam_train_accuracy": 1.0,
+  "category_train_accuracy": 1.0,
+  "trained_at": "2026-10-15T16:34:14+00:00"
+}
