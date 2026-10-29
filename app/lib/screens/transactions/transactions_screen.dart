@@ -139,6 +139,11 @@ class _TransactionsTabState extends State<TransactionsTab> {
 
   Widget _txnRow(Transaction t) {
     final note = t.note;
+    // SMS-imported rows keep their received time so the ledger matches the
+    // message that created them.
+    final when = note == 'Added from bank SMS'
+        ? '${Formatters.dayLabel(t.date)} · ${Formatters.timeLabel(t.date)}'
+        : Formatters.dayLabel(t.date);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: AppCard(
@@ -146,7 +151,7 @@ class _TransactionsTabState extends State<TransactionsTab> {
         child: TransactionTile(
           transaction: t,
           iconSize: 19,
-          subtitle: '${t.category.label} · ${Formatters.dayLabel(t.date)}${note != null ? ' · $note' : ''}',
+          subtitle: '${t.category.label} · $when${note != null ? ' · $note' : ''}',
         ),
       ),
     );

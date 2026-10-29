@@ -73,6 +73,7 @@ class DashboardData {
 abstract class FinanceRepository {
   Future<DashboardData> fetchDashboard();
   Future<List<Transaction>> fetchTransactions({int limit = 100});
+  Future<void> addTransaction(Transaction transaction);
   Future<List<BudgetItem>> fetchBudget();
   Future<List<Goal>> fetchGoals();
   Future<List<Recommendation>> fetchRecommendations();
@@ -110,6 +111,7 @@ abstract class FinanceRepository {
 /// Add a small delay so loading/skeleton states are exercised in the UI.
 class MockFinanceRepository implements FinanceRepository {
   int _delayMs = 650;
+  final List<Transaction> _smsTransactions = [];
 
   /// Set to 0 to disable artificial latency (used by tests).
   void setDelay(int milliseconds) => _delayMs = milliseconds;
@@ -142,8 +144,20 @@ class MockFinanceRepository implements FinanceRepository {
   }
 
   @override
-  Future<List<Transaction>> fetchTransactions({int limit = 100}) =>
-      _slow(MockData.transactions().take(limit).toList());
+  Future<List<Transaction>> fetchTransactions({int limit = 100}) {
+    final transactions = [..._smsTransactions, ...MockData.transactions()]
+      ..sort((a, b) => b.date.compareTo(a.date));
+    return _slow(transactions.take(limit).toList());
+  }
+
+  @override
+  Future<void> addTransaction(Transaction transaction) {
+    if (_smsTransactions.any((item) => item.id == transaction.id)) {
+      return Future.value();
+    }
+    _smsTransactions.add(transaction);
+    return Future.value();
+  }
 
   @override
   Future<List<BudgetItem>> fetchBudget() => _slow(MockData.budgets);
@@ -333,7 +347,9 @@ SmsClassification _mockClassify(String rawText) {
 /// Returns the offline mock so screens paint instantly and widget tests stay
 /// hermetic. Screens upgrade to live predictions best-effort through
 /// [getApiRepository] (failures keep the mock content on screen).
-FinanceRepository getRepository() => MockFinanceRepository();
+final MockFinanceRepository _sharedMockRepository = MockFinanceRepository();
+
+FinanceRepository getRepository() => _sharedMockRepository;
 
 /// Live backend repository. Every ML call hits the API; anything without a
 /// backend endpoint (transactions, budgets, goals, ...) is served from the
@@ -407,7 +423,7 @@ const Map<String, double> uciRiskPayload = {
 /// - Wellness drivers: `POST /explain/wellness`
 class ApiFinanceRepository implements FinanceRepository {
   ApiFinanceRepository({FinanceRepository? fallback})
-      : _fallback = fallback ?? (MockFinanceRepository()..setDelay(0));
+      : _fallback = fallback ?? _sharedMockRepository;
 
   final FinanceRepository _fallback;
   static const _timeout = Duration(seconds: 12);
@@ -515,6 +531,10 @@ class ApiFinanceRepository implements FinanceRepository {
       return _fallback.fetchXaiFactors();
     }
   }
+
+  @override
+  Future<void> addTransaction(Transaction transaction) =>
+      _fallback.addTransaction(transaction);
 
   @override
   Future<SmsClassification> classifySms(String text) async {

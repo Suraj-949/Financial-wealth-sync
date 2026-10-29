@@ -3,25 +3,67 @@ import 'package:permission_handler/permission_handler.dart';
 
 /// Represents a single SMS message read from the device inbox.
 class InboxSms {
+  /// Platform SMS id, when the device exposes one. Used as the stable identity
+  /// of the message across refreshes, month filters and pagination.
+  final int? id;
   final String address; // sender (bank name / number)
   final String body;
   final DateTime date;
 
   const InboxSms({
+    this.id,
     required this.address,
     required this.body,
     required this.date,
   });
+
+  /// Stable key for per-message UI state. Indices cannot be used because the
+  /// visible list is filtered by month and grows when older pages load.
+  String get key => id != null
+      ? 'id:$id'
+      : '${date.microsecondsSinceEpoch}:${address.hashCode}:${body.hashCode}';
+
+  DateTime get day => DateTime(date.year, date.month, date.day);
+
+  DateTime get month => DateTime(date.year, date.month);
+}
+
+/// One page of inbox scanning.
+class InboxScan {
+  /// Bank/transaction messages found in this page, newest first.
+  final List<InboxSms> messages;
+
+  /// Raw inbox offset the next scan should start from. This is *not* the
+  /// number of bank messages, because non-bank SMS are filtered out.
+  final int nextStart;
+
+  /// Whether the device may hold older messages still to scan.
+  final bool hasMore;
+
+  const InboxScan({
+    required this.messages,
+    required this.nextStart,
+    required this.hasMore,
+  });
+
+  static const InboxScan empty =
+      InboxScan(messages: <InboxSms>[], nextStart: 0, hasMore: false);
 }
 
 /// Service that reads the device SMS inbox and filters likely bank/transaction
 /// messages using keyword heuristics before sending them to the classifier.
 class SmsInboxService {
-  static final SmsInboxService _instance = SmsInboxService._internal();
-  factory SmsInboxService() => _instance;
-  SmsInboxService._internal();
+  SmsInboxService();
 
-  final SmsQuery _query = SmsQuery();
+  /// `flutter_sms_inbox` caps a single query window at 1,000 messages.
+  static const int maxWindow = 1000;
+
+  /// Default page size. 500 keeps the first load fast while leaving room to
+  /// page further back (up to [maxWindow]) when the user browses older months.
+  static const int defaultPageSize = 500;
+
+  SmsQuery? _query;
+  SmsQuery get _smsQuery => _query ??= SmsQuery();
 
   // ── Bank keyword patterns (common Indian & global banks / keywords) ────────
   static final _bankKeywords = RegExp(
@@ -51,32 +93,64 @@ class SmsInboxService {
     return await Permission.sms.isGranted;
   }
 
-  /// Fetch the last 90 days of SMS and return only bank/transaction messages.
-  Future<List<InboxSms>> fetchBankSms({int limit = 200}) async {
+  /// True when the user selected "Don't allow" permanently, so the system
+  /// dialog will no longer appear and Settings must be used instead.
+  Future<bool> isPermanentlyDenied() async {
+    final status = await Permission.sms.status;
+    return status.isPermanentlyDenied;
+  }
+
+  /// Opens the OS app settings page so the user can grant SMS access.
+  Future<bool> openSettings() => openAppSettings();
+
+  /// Scan a page of the inbox and return only bank/transaction messages.
+  ///
+  /// [start] is the raw inbox offset to resume from (as returned by a previous
+  /// [InboxScan.nextStart]); [count] is how many raw messages to scan. The
+  /// device does not support querying by date, so the screen filters the
+  /// returned messages by month/year.
+  Future<InboxScan> scanBankSms({
+    int start = 0,
+    int count = defaultPageSize,
+  }) async {
     final granted = await requestPermission();
     if (!granted) throw PermissionDeniedException();
 
-    final cutoff = DateTime.now().subtract(const Duration(days: 90));
-    final messages = await _query.querySms(
-      kinds: [SmsQueryKind.inbox],
-      count: 500, // fetch more, then filter
+    final size = count <= 0
+        ? defaultPageSize
+        : (count > maxWindow ? maxWindow : count);
+
+    final raw = await _smsQuery.querySms(
+      kinds: <SmsQueryKind>[SmsQueryKind.inbox],
+      start: start,
+      count: size,
     );
 
     final filtered = <InboxSms>[];
-
-    for (final msg in messages) {
-      if (filtered.length >= limit) break;
+    for (final msg in raw) {
       final body = msg.body ?? '';
       final address = msg.sender ?? '';
-      final date = msg.date ?? DateTime(2000);
-
-      if (date.isBefore(cutoff)) continue;
+      final date = msg.date ?? msg.dateSent;
+      if (date == null) continue;
       if (_bankKeywords.hasMatch(body) && !_spamKeywords.hasMatch(body)) {
-        filtered.add(InboxSms(address: address, body: body, date: date));
+        filtered.add(InboxSms(
+          id: msg.id,
+          address: address,
+          body: body,
+          date: date,
+        ));
       }
     }
 
-    return filtered;
+    filtered.sort((a, b) => b.date.compareTo(a.date));
+
+    final consumed = start + raw.length;
+    return InboxScan(
+      messages: filtered,
+      nextStart: consumed,
+      // The plugin cannot page past its 1,000-message window.
+      hasMore: raw.length >= size && consumed < maxWindow,
+    );
   }
 }
 

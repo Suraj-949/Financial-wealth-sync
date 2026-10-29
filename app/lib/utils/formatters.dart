@@ -49,8 +49,12 @@ class Formatters {
     final diff = today.difference(day).inDays;
     if (diff == 0) return 'Today';
     if (diff == 1) return 'Yesterday';
-    return DateFormat('MMM d').format(d);
+    // Keep older entries unambiguous across year boundaries.
+    if (d.year == now.year) return DateFormat('MMM d').format(d);
+    return DateFormat('MMM d, yyyy').format(d);
   }
+
+  static String timeLabel(DateTime d) => DateFormat('h:mm a').format(d);
 
   static String fullDate(DateTime d) => DateFormat('MMM d, yyyy').format(d);
 
