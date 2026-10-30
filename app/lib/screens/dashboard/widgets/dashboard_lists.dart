@@ -92,6 +92,55 @@ class PaymentSuggestionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (suggestion.offers.isEmpty) {
+      final hasExpense = suggestion.amount > 0 && suggestion.merchant.isNotEmpty;
+      return AppCard(
+        color: AppColors.surface,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.storefront,
+                  color: AppColors.accent,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    hasExpense
+                        ? 'Latest expense: ${Formatters.inr(suggestion.amount)} at ${suggestion.merchant}'
+                        : 'No purchase suggestions yet',
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              hasExpense
+                  ? 'No card or UPI offers are stored for this purchase yet.'
+                  : 'Add transactions to compare payment methods and offers.',
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 12.5),
+            ),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: onViewAll,
+                child: const Text('View all offers →'),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return AppCard(
       color: AppColors.surface,
       padding: const EdgeInsets.all(16),
@@ -256,6 +305,13 @@ class AccountsBand extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (accounts.isEmpty) {
+      return const EmptyState(
+        icon: Icons.account_balance_wallet_outlined,
+        title: 'No accounts linked',
+        message: 'Add an account to see balances here.',
+      );
+    }
     return SizedBox(
       height: 96,
       child: ListView(

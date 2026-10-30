@@ -1,93 +1,135 @@
-# WealthSync - Machine Learning Models
+# WealthSync — Machine Learning Intelligence Layer (`ml/`)
 
-Core ML models for the WealthSync financial-wealth application. Five models are
-built.
+This directory contains the machine learning pipelines, datasets, feature engineering scripts, model artifacts, and evaluation reports for the WealthSync platform.
 
+WealthSync utilizes a two-tier machine learning architecture:
+1. **Production Candidate Models (`ml/models/`)**: High-accuracy supervised models trained on empirical US Bureau of Labor Statistics (BLS) and UCI Credit Default datasets.
+2. **Longitudinal Monthly INR Models (`ml/artifacts/`)**: 5 monthly forecasting models trained on a 48-month panel dataset for personal finance tracking in INR.
+3. **Deep Learning Exploration**: Multi-task neural network architectures (`train_all_with_dl.py`, `test_dl_models.py`).
 
-## Dataset & cleaning
+---
 
-Source: `Dataset/budgetwise_finance_dataset.csv` (the only longitudinal dataset
-available; 150 users x 48 months, 2021-01..2024-12).
+## Model Inventory & Benchmarks
 
-- Not usable: `synthetic_personal_finance_dataset.csv` (single cross-section per
-  user, not time series), `personal_finance_tracker_dataset.csv` (3k rows, no
-  payment method), `master_credit_risk_pool.csv` (corrupted labels),
-  `default of credit card clients.csv` (duplicated header row),
-  `City_time_series.csv` (housing macro data).
-- `data/prepare_data.py` maps messy date/category/payment-mode aliases, drops
-  invalid rows and winsorizes `amount` at 500,000 (the synthetic anomalies of
-  999,999,999 and 1,000,000 are clipped).
-- Payment modes are canonical: UPI / Debit Card / Cash / Bank Transfer.
-  The source stores a bare `card`, so credit vs debit cannot be distinguished;
-  that variant is mapped to Debit Card.
-- Outputs: `data/processed/transactions_clean.csv` (~12.6k txns) and
-  `data/processed/user_monthly.csv` (~6k user-months).
+### Tier 1: Production Candidate Models (`ml/models/`)
 
-## Feature & target construction
+These models power the primary predictive endpoints in the FastAPI backend:
 
-- `features/feature_engineering.py`:
-  - Monthly features (models 1-4): income, expense, cash flow, ratios, rent
-    burden, category spend, lags (income/expense/cash-flow/savings 1-2m),
-    3-month rolling means, income/expense trends, spending/income stability,
-    txn count, avg txn amount, month, year.
-  - Transaction features (model 5): amount, calendar flags, month-to-date cash
-    flow / income so far, historical payment-method counts, and cumulative
-    category spend before the transaction (`cat_cum_*`).
-- `features/target_generation.py`:
-  - `future_expense`, `future_savings` = actual next-month values (true
-    forecasting targets; model never sees the same month's income/expense).
-  - `wellness_score` (0-100) and `risk_flag` (0/1) are **rule-derived labels**
-    with documented rules. They are NOT real-world ground truth.
-  - `payment_mode` = observed label (documented behavioural prediction).
+| Model | Task / Target | Algorithm | Dataset | Primary Metrics | Status | Serving Endpoint |
+|---|---|---|---|---|---|---|
+| **Spending Regressor** | Next-quarter total expenditure (`total_spend_t_plus_1`) | `RandomForestRegressor` (300 trees, leaf size 5) | BLS CE Interview PUMD 2004 (20,378 transitions) | $R^2 = 0.5367$<br>MAE = \$2,452.25<br>RMSE = \$5,230.91 | Production Candidate | `POST /api/ml/spending/predict` |
+| **Credit Risk Regressor** | 30-day credit card default probability (`default payment next month`) | `GradientBoostingRegressor` (300 trees, lr=0.05, depth=3) | UCI Default of Credit Card Clients (30,000 clients) | ROC-AUC = 0.7877<br>Brier = 0.1318<br>MAE = 0.26 | Production Candidate | `POST /api/ml/risk/predict` |
 
-## Model design
+#### Spending Model Features (`ml/models/spending/random forest/feature_columns.json`)
+Consumes 22 raw consumer-unit features:
+- Demographics: `age_ref`, `age2`, `fam_size`, `educ_ref`, `fam_type`, `cutenure`, `bls_urbn`
+- Historical quarterly spending: `totexppq`, `foodpq`, `houspq`, `transpq`, `utilpq`, `sheltpq`
+- Lags & statistics: `total_spend_lag1`, `total_spend_pastmean`, `total_spend_paststd`, `food_lag1`, `housing_lag1`, `income_lag1`
+- Income: `itbi_q_income`, `cuincome_class`, `seq`
 
-Time-aware split (no leakage): TRAIN 2021-01..2023-06, VAL 2023-07..2023-12,
-TEST 2024-01..2024-12. Scalers are fitted on TRAIN only. Regression targets
-train in signed-log1p space and are inverse-transformed for reporting.
+#### Credit Risk Model Features (`ml/models/risk/gradient boosting/feature_columns.json`)
+Consumes 26 raw client credit features:
+- Credit limit: `LIMIT_BAL`
+- Demographics: `AGE`, `SEX`, `EDUCATION`, `MARRIAGE`
+- Past 6-month repayment status: `PAY_0`, `PAY_2`, `PAY_3`, `PAY_4`, `PAY_5`, `PAY_6`
+- Past 6-month bill statements: `BILL_AMT1` through `BILL_AMT6`
+- Past 6-month payment amounts: `PAY_AMT1` through `PAY_AMT6`
+- Derived indicators: `util_mean6`, `repay_ratio_mean6` (can be null), `max_delinq_6m`
 
-Each model compares 2-3 algorithms on the validation window and the best is
-refitted on train+val and scored on the unseen test window.
+#### Calibrated Risk Score & Bands:
+The model outputs a continuous probability $P(\text{default}) \in [0, 1]$. The API converts this to:
+$$\text{RiskScore} = P(\text{default}) \times 100$$
+- **Low (0–30)**: Observed test default rate of 12.6%
+- **Medium (31–60)**: Observed test default rate of 40.3%
+- **High (61–100)**: Observed test default rate of 73.6%
 
-| # | Model | Target | Candidates compared (in 2-3 per requirement) | Best on validation |
-|---|-------|--------|-----------------------------------------------|--------------------|
-| 1 | Spending forecast | future expense | RF, GBM, XGB | XGB |
-| 2 | Savings forecast | future savings | GBM, RF, XGB | XGB |
-| 3 | Financial wellness | wellness 0-100 | XGB, RF, GBM | GBM |
-| 4 | Risk detection | risk 0/1 | LogisticRegression, RF, XGB | RF |
-| 5 | Payment-method | payment mode | XGB, RF, LogisticRegression | XGB |
+---
 
-## Results (test window)
+### Tier 2: Longitudinal INR Models (`ml/artifacts/`)
 
-| Model | Metric | Value |
-|-------|--------|-------|
-| Spending | MAE / RMSE / R2 | 21 493 / 81 833 / -0.06 |
-| Savings | MAE / RMSE / R2 | 39 613 / 99 307 / ~0.00 |
-| Wellness | MAE / RMSE / R2 | 0.10 / 0.39 / 0.9997 |
-| Risk | ROC-AUC / F1-weighted / Acc | 0.971 / 0.950 / 0.963 |
-| Payment | F1-weighted / Accuracy | 0.232 / 0.237 (chance ~0.25) |
+Source: `Dataset/budgetwise_finance_dataset.csv` (150 users $\times$ 48 months, chronological split: Train 2021-01..2023-06, Val 2023-07..2023-12, Test 2024-01..2024-12).
 
-Caveats, documented in each artifact's `model_metadata.json`:
+| # | Model | Target | Algorithm | Unit / Range | Test Metrics |
+|---|---|---|---|---|---|
+| 1 | **Spending Forecast** | Next-month expenses (`future_expense`) | XGBoost Regressor | INR (signed-log1p) | MAE: ₹21,493, RMSE: ₹81,833, $R^2 \approx -0.06$ |
+| 2 | **Savings Forecast** | Next-month savings (`future_savings`) | XGBoost Regressor | INR (signed-log1p) | MAE: ₹39,613, RMSE: ₹99,307, $R^2 \approx 0.00$ |
+| 3 | **Financial Wellness** | Financial wellness score (`wellness_score`) | Gradient Boosting Regressor | 0–100 score | MAE: 0.10, RMSE: 0.39, $R^2 = 0.9997$ |
+| 4 | **Risk Detection** | High financial risk flag (`risk_flag`) | Random Forest Classifier | Binary (0: Low, 1: High) | ROC-AUC: 0.971, Weighted F1: 0.950, Acc: 96.3% |
+| 5 | **Payment Mode** | Preferred transaction mode (`payment_mode`) | XGBoost Classifier | UPI, Debit Card, Cash, Bank Transfer | Accuracy: 23.7% (near chance ~25%) |
 
-- Spending/savings R2 ~ 0: verified no leakage; lags carry limited signal in
-  this synthetic data, and the test window has heavy-winsorized outliers.
-- Wellness R2 0.9997: expected circularity - the label is a documented rule
-  over these same features; the model reproduces the rule. Replace rule labels
-  with expert/manual labels in production.
-- Risk test set is 96.1% high-risk (imbalance); ROC-AUC/F1 used as the primary
-  metric. `Confusion_Matrix` in metrics.
-- Payment ~ chance: payment methods are near-uniform random per user in this
-  synthetic dataset (modal share 0.31), so no signal exists to learn.
+*Honest Caveats:*
+- Spending and savings targets exhibit low $R^2$ on the volatile 2024 test window due to heavy-winsorized outliers in synthetic data.
+- Wellness score $R^2 = 0.9997$ is expected circularity: the training label is rule-derived over the same engineered features.
+- Payment method accuracy is bounded near random chance ($\approx 25\%$) because payment modes are uniformly distributed per user in the synthetic source.
 
-## Artifacts
+---
 
-Each `artifacts/<model>/` contains `model.joblib`, `feature_columns.json`,
-`training_metrics.json`, `model_metadata.json`, plus `scaler.pkl` and
-`label_mapping.json` where applicable (risk, payment). The per-algorithm
-validation comparison lives in `training_metrics.json` under
-`algorithm_comparison`.
+## Directory Layout
 
-## Reports & explainability
+```
+ml/
+|-- models/                      # Production Candidate Model artifacts
+|   |-- spending/random forest/  # model.joblib (Pipeline), preprocessor.joblib, metadata.json
+|   `-- risk/gradient boosting/  # model.joblib (Pipeline), preprocessor.joblib, metadata.json
+|-- artifacts/                   # 5 longitudinal INR model artifacts
+|   |-- spending/                # model.joblib, scaler.pkl, feature_columns.json, metadata.json
+|   |-- savings/                 # model.joblib, scaler.pkl, feature_columns.json, metadata.json
+|   |-- wellness/                # model.joblib, scaler.pkl, feature_columns.json, metadata.json
+|   |-- risk/                    # model.joblib, label_mapping.json, scaler.pkl, metadata.json
+|   `-- payment/                 # model.joblib, label_mapping.json, scaler.pkl, metadata.json
+|-- features/                    # Feature transformation pipelines
+|   |-- feature_engineering.py   # Monthly rolling aggregates, lags, ratios, stability metrics
+|   `-- target_generation.py     # Forecasting lead targets and rule-derived wellness/risk labels
+|-- training/                    # Model training scripts
+|   |-- train_spending.py        # Trains spending forecast models
+|   |-- train_savings.py         # Trains savings forecast models
+|   |-- train_wellness.py        # Trains wellness score regressor
+|   |-- train_risk.py            # Trains financial risk classifier
+|   |-- train_payment.py         # Trains payment method classifier
+|   `-- utils.py                 # Evaluation, splitting, and persistence helpers
+|-- evaluation/                  # Offline evaluation scripts
+|   `-- evaluate_models.py       # Computes metrics across test windows -> model_performance_summary.json
+|-- explainability/              # Explainable AI (SHAP) generators
+|   `-- shap_explainer.py        # Generates SHAP summary plots and feature importance rankings
+|-- reports/                     # Output summaries and figures
+|   |-- model_performance_summary.json # Combined JSON test metrics
+|   `-- shap_*.png / shap_*.csv  # Visual SHAP plots and feature rank tables
+|-- Dataset/                     # Source datasets
+|   |-- budgetwise_finance_dataset.csv
+|   `-- RAW DATA/                # Integrated user profiles and transaction datasets
+|-- train_all_with_dl.py         # Deep Learning multi-task training script
+`-- test_dl_models.py            # Deep Learning verification and test script
+```
 
-- `evaluation/evaluate_models.py` -> `reports/model_performance_summary.json`
-- `explainability/shap_explainer.py` -> `reports/shap_<model>.csv` + `.png`
+---
+
+## Explainable AI (SHAP)
+
+Every model in `ml/` supports feature attribution via SHAP:
+- **Tree Models**: Evaluated via `shap.TreeExplainer`.
+- **Linear Models**: Evaluated via `shap.LinearExplainer`.
+- Reports generated in `ml/reports/`:
+  - `shap_spending.png`, `shap_spending_ranks.csv`
+  - `shap_savings.png`, `shap_savings_ranks.csv`
+  - `shap_wellness.png`, `shap_wellness_ranks.csv`
+  - `shap_risk.png`, `shap_risk_ranks.csv`
+  - `shap_payment.png`, `shap_payment_ranks.csv`
+
+The FastAPI backend consumes these explainers dynamically over `POST /explain/{model}`, returning the top-12 ranked features with positive or negative attribution scores.
+
+---
+
+## Retraining & Evaluation
+
+To evaluate or retrain models:
+```bash
+# Evaluate models and generate performance summary:
+python ml/evaluation/evaluate_models.py
+
+# Generate SHAP plots:
+python ml/explainability/shap_explainer.py
+
+# Train specific model:
+python ml/training/train_risk.py
+```
+*Note: In production serving (`backend/`), models are loaded as pre-fitted sklearn `Pipeline` objects. The backend never retrains or calls `.fit()`.*

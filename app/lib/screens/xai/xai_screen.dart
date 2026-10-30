@@ -4,6 +4,7 @@ import '../../app/theme.dart';
 import '../../widgets/common.dart';
 import '../../models/models.dart';
 import '../../services/finance_repository.dart';
+import '../../services/finance_refresh.dart';
 
 class XaiScreen extends StatefulWidget {
   const XaiScreen({super.key});
@@ -12,7 +13,8 @@ class XaiScreen extends StatefulWidget {
   State<XaiScreen> createState() => _XaiScreenState();
 }
 
-class _XaiScreenState extends State<XaiScreen> {
+class _XaiScreenState extends State<XaiScreen>
+    with FinanceDataListener<XaiScreen> {
   final repo = getRepository();
 
   FinancialSummary? _summary;
@@ -24,6 +26,9 @@ class _XaiScreenState extends State<XaiScreen> {
     super.initState();
     _load();
   }
+
+  @override
+  void onFinanceDataChanged() => _load();
 
   /// Dashboard shell paints from the mock repository; SHAP drivers upgrade
   /// best-effort from the live wellness model (`POST /explain/wellness`).

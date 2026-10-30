@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../../app/theme.dart';
 import '../../../utils/formatters.dart';
 import '../../../models/models.dart';
+import '../../../widgets/common.dart';
 
 /// Donut chart (tap-aware) with center total and legend below.
 class SpendingDonut extends StatefulWidget {
@@ -39,6 +40,13 @@ class _SpendingDonutState extends State<SpendingDonut> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.categories.isEmpty || widget.total <= 0) {
+      return const EmptyState(
+        icon: Icons.donut_large,
+        title: 'No spending yet',
+        message: 'Add transactions to see your category breakdown.',
+      );
+    }
     final active = _activeIndex;
     return Column(
       children: [

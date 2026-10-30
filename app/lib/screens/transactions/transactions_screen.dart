@@ -6,6 +6,8 @@ import '../../widgets/transaction_card.dart';
 import '../../utils/formatters.dart';
 import '../../models/models.dart';
 import '../../services/finance_repository.dart';
+import '../../services/finance_refresh.dart';
+import 'add_transaction_sheet.dart';
 
 class TransactionsTab extends StatefulWidget {
   const TransactionsTab({super.key});
@@ -14,7 +16,8 @@ class TransactionsTab extends StatefulWidget {
   State<TransactionsTab> createState() => _TransactionsTabState();
 }
 
-class _TransactionsTabState extends State<TransactionsTab> {
+class _TransactionsTabState extends State<TransactionsTab>
+    with FinanceDataListener<TransactionsTab> {
   final repo = getRepository();
 
   List<Transaction>? _items;
@@ -29,6 +32,9 @@ class _TransactionsTabState extends State<TransactionsTab> {
     _load();
   }
 
+  @override
+  void onFinanceDataChanged() => _load();
+
   Future<void> _load() async {
     try {
       final items = await repo.fetchTransactions();
@@ -40,6 +46,36 @@ class _TransactionsTabState extends State<TransactionsTab> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString());
+    }
+  }
+
+  Future<void> _add() async {
+    final saved = await showAddTransactionSheet(context, repository: repo);
+    if (!mounted || saved != true) return;
+    await _load();
+  }
+
+  Future<bool> _delete(Transaction transaction) async {
+    try {
+      await repo.deleteTransaction(transaction.id);
+      if (!mounted) return false;
+      setState(() => _items?.removeWhere((item) => item.id == transaction.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Deleted ${transaction.merchant}.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not delete: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return false;
     }
   }
 
@@ -60,10 +96,29 @@ class _TransactionsTabState extends State<TransactionsTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
-            child: Text('Transactions',
-                style: const TextStyle(
-                    color: AppColors.textPrimary, fontSize: 21, fontWeight: FontWeight.w800)),
+            padding: const EdgeInsets.fromLTRB(18, 14, 10, 6),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Transactions',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 21,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _add,
+                  tooltip: 'Add transaction',
+                  icon: const Icon(
+                    Icons.add_circle_outline,
+                    color: AppColors.accent,
+                  ),
+                ),
+              ],
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
@@ -146,14 +201,53 @@ class _TransactionsTabState extends State<TransactionsTab> {
         : Formatters.dayLabel(t.date);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: AppCard(
-        padding: const EdgeInsets.all(12),
-        child: TransactionTile(
-          transaction: t,
-          iconSize: 19,
-          subtitle: '${t.category.label} · $when${note != null ? ' · $note' : ''}',
-        ),
+      child: Row(
+        children: [
+          Expanded(
+            child: AppCard(
+              padding: const EdgeInsets.all(12),
+              child: TransactionTile(
+                transaction: t,
+                iconSize: 19,
+                subtitle:
+                    '${t.category.label} · $when${note != null ? ' · $note' : ''}',
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: () => _confirmDelete(t),
+            tooltip: 'Delete transaction',
+            icon: const Icon(
+              Icons.delete_outline,
+              size: 19,
+              color: AppColors.textMuted,
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  Future<void> _confirmDelete(Transaction transaction) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete transaction?'),
+        content: Text(
+          '${transaction.merchant} · ${Formatters.inr(transaction.amount)}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await _delete(transaction);
   }
 }

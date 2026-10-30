@@ -1,61 +1,167 @@
 # SMS Transaction Classifier (`sms/`)
 
-Two-stage text pipeline that turns raw bank / transaction SMS into structured
-categories, supporting automated expense tracking.
+The `sms/` package provides a two-stage NLP text classification pipeline that automatically parses raw bank and payment SMS messages into structured ledger transactions.
+
+---
+
+## Two-Stage Pipeline Architecture
 
 ```
-raw SMS
-   ↓  preprocess_text()  (lowercase, [url]/[phone] tokens, strip digits & punctuation)
-   ↓  Stage 1: spam/noise filter   →  DISCARDED (SPAM/NOISE)  when predicted spam
-   ↓  Stage 2: categoriser         →  credit | debit | other
+                       Raw SMS Message
+                              │
+                              ▼
+                      preprocess_text()
+         * Lowercase conversion
+         * Mask URLs -> '[url]'
+         * Mask phone numbers -> '[phone]'
+         * Strip extraneous digits and symbols
+                              │
+                              ▼
+            ┌───────────────────────────────────┐
+            │   Stage 1: Spam / Noise Filter    │
+            │   TF-IDF + MultinomialNB (a=0.1)  │
+            └─────────────────┬─────────────────┘
+                              │
+            ┌─────────────────┴─────────────────┐
+            │                                   │
+      Is Spam? = YES                      Is Spam? = NO
+            │                                   │
+            ▼                                   ▼
+     DISCARDED (SPAM/NOISE)     ┌───────────────────────────────────┐
+     Category: N/A              │   Stage 2: Transaction Category   │
+                                │   TF-IDF + MultinomialNB (a=0.1)  │
+                                └─────────────────┬─────────────────┘
+                                                  │
+                                                  ▼
+                                       credit | debit | other
+                                       APPROVED (TRANSACTION)
 ```
 
-Both stages are `TfidfVectorizer(ngram_range=(1, 2))` + `MultinomialNB(alpha=0.1)`,
-trained on the small labelled dataset embedded in `sms_classifier.py`. The data,
-preprocessing rules and hyper-parameters are preserved verbatim from the training
-notebook, so the served model **is** the trained model.
+Both stages use `TfidfVectorizer(ngram_range=(1, 2))` paired with `MultinomialNB(alpha=0.1)`. The artifacts are fitted once and persisted to disk. The backend loads them lazily and never retrains per request.
 
-## Files
+---
 
-| File | Purpose |
-|---|---|
-| `sms_classifier.py` | Dataset, preprocessing, `SmsClassifier` (train / save / load / classify) |
-| `artifacts/` | Persisted pipeline the backend serves (generated) |
+## Directory Structure
 
-## Artifacts (`sms/artifacts/`)
-
-- `spam_vectorizer.joblib`, `spam_model.joblib` — stage 1 (binary: `0` legitimate, `1` spam)
-- `category_vectorizer.joblib`, `category_model.joblib` — stage 2 (`credit` / `debit` / `other`)
-- `metadata.json` — algorithm, classes, sample counts, train accuracy, trained_at
-
-## Train once (already committed artifacts)
-
-```powershell
-# From repo root
-$env:KMP_DUPLICATE_LIB_OK="TRUE"
-C:\Users\SURAJ\anaconda3\python.exe -c "from sms import sms_classifier as sc; sc.SmsClassifier.train().save()"
+```
+sms/
+|-- sms_classifier.py            # Dataset, text preprocessing, and SmsClassifier class
+|-- untitled7.py                 # Source training notebook
+|-- __init__.py                  # Package initialization
+|-- artifacts/                   # Serialized pipeline components
+|   |-- spam_vectorizer.joblib   # Stage 1 TF-IDF vectorizer
+|   |-- spam_model.joblib        # Stage 1 MultinomialNB model (0: Legitimate, 1: Spam)
+|   |-- category_vectorizer.joblib# Stage 2 TF-IDF vectorizer
+|   |-- category_model.joblib    # Stage 2 MultinomialNB model (credit, debit, other)
+|   `-- metadata.json            # Model parameters, training counts, and accuracy
+`-- README.md                    # SMS classification guide (this file)
 ```
 
-`SmsClassifier.load_or_train()` loads the artifacts if present, otherwise trains
-and persists them once. The backend uses this — it never retrains per request.
+---
 
-## API
+## API Endpoints (`backend/sms_service.py`)
 
-Served by the FastAPI backend (`backend/sms_service.py`):
+The pipeline is served by the FastAPI backend:
 
-| Method | Path | Body |
-|---|---|---|
-| GET | `/api/sms/health` | — |
-| POST | `/api/sms/classify` | `{ "text": "..." }` |
-| POST | `/api/sms/classify/batch` | `{ "messages": ["...", ...] }` |
+### 1. GET `/api/sms/health`
+Check availability and class metadata:
+```json
+{
+  "success": true,
+  "sms": {
+    "status": "available",
+    "classes": ["credit", "debit", "other"],
+    "train_samples": 42,
+    "train_accuracy": 1.0
+  }
+}
+```
 
-A legitimate SMS returns `status = "APPROVED (TRANSACTION)"` with a
-`category`; spam/noise returns `status = "DISCARDED (SPAM/NOISE)"` with
-`category = "N/A"`. See `backend/ML_API_DOCUMENTATION.md` for the full schema.
+### 2. POST `/api/sms/classify`
+Classify a single SMS message.
 
-## Notes
+**Request:**
+```json
+{
+  "text": "ALERT: Acct *112 has been credited with USD 450.00."
+}
+```
 
-- The training set is small and synthetic; train accuracy is 1.0 and real-world
-  accuracy will be lower. Treat outputs as assistive, not authoritative.
-- `untitled7.py` is the original source notebook; `sms_classifier.py` is the
-  productionised extraction.
+**Response (Legitimate Transaction):**
+```json
+{
+  "success": true,
+  "data": {
+    "text": "ALERT: Acct *112 has been credited with USD 450.00.",
+    "is_spam": false,
+    "is_transaction": true,
+    "status": "APPROVED (TRANSACTION)",
+    "category": "credit",
+    "display_category": "Credit",
+    "confidence": 94.56,
+    "spam_probability": 0.95,
+    "category_probabilities": {
+      "credit": 94.56,
+      "debit": 3.4,
+      "other": 2.04
+    }
+  }
+}
+```
+
+**Response (Discarded Spam / Promotion):**
+```json
+{
+  "success": true,
+  "data": {
+    "text": "Congratulations! You won a $1,000,000 lottery! Call now.",
+    "is_spam": true,
+    "is_transaction": false,
+    "status": "DISCARDED (SPAM/NOISE)",
+    "category": "N/A",
+    "display_category": "N/A",
+    "confidence": 98.7,
+    "spam_probability": 98.7,
+    "category_probabilities": {}
+  }
+}
+```
+
+### 3. POST `/api/sms/classify/batch`
+Classify an array of messages while preserving input order.
+```json
+{
+  "messages": [
+    "You spent INR 450 at Starbucks on 12-Oct.",
+    "Exclusive sale! 50% discount on shoes today only."
+  ]
+}
+```
+
+---
+
+## Mobile App Integration (`app/`)
+
+The mobile client leverages this pipeline for automated bank SMS import:
+
+1. **`SmsInboxService`**:
+   - Accesses device SMS inbox on Android via `flutter_sms_inbox` and `permission_handler`.
+   - Filters candidate banking messages using regex keywords (`credited`, `debited`, `transfer`, `UPI`, `ATM`) while excluding spam keywords.
+   - Paginates inbox records up to 1,000 messages.
+2. **`SmsTransactionImporter`**:
+   - Parses the transaction amount (`₹`, `Rs.`, `INR`, `$`) and merchant/counterparty from the text.
+   - Converts the approved SMS into a typed `Transaction` entity.
+   - Injects the transaction directly into the user's active ledger.
+3. **`SmsClassifierScreen`**:
+   - **Manual Tab**: Live try-me playground for pasting text and checking classification confidence.
+   - **SMS Timeline Tab**: Monthly archive of scanned bank messages with month-by-month picker, confidence badges, and 1-click **Import to Ledger** button.
+
+---
+
+## Retraining
+
+To retrain the model and regenerate `artifacts/`:
+```bash
+# From repository root
+python -c "from sms import sms_classifier as sc; sc.SmsClassifier.train().save()"
+```

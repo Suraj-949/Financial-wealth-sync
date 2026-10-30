@@ -21,12 +21,14 @@ Interactive docs: GET /docs  (the mobile app consumes this API)
 
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException, Request, status
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from . import services, samples, sms_service
+from . import services, samples, sms_service, database
 from .schemas import (
     SpendingPredictRequest, SpendingPredictResponse,
     RiskPredictRequest, RiskPredictResponse,
@@ -75,7 +77,18 @@ def _generic_exception_handler(request: Request, exc: Exception):
 
 # ---- App Setup ----
 
-app = FastAPI(title="WealthSync ML API", version="1.0.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    try:
+        database.initialize()
+    except Exception as exc:
+        # ML endpoints remain usable while PostgreSQL is being configured.
+        import logging
+        logging.warning("PostgreSQL unavailable; finance data routes will return 503: %s", exc)
+    yield
+
+
+app = FastAPI(title="WealthSync API", version="1.1.0", lifespan=lifespan)
 
 # Override default exception handlers (must be done after app creation)
 from fastapi.exceptions import RequestValidationError
@@ -95,7 +108,77 @@ app.add_middleware(
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "models": list(services.PRODUCTION_MODELS.keys()) + ["sms"]}
+    try:
+        database.engine.connect().close()
+        db_status = "connected"
+    except Exception:
+        db_status = "unavailable"
+    return {"status": "ok", "database": db_status, "models": list(services.PRODUCTION_MODELS.keys()) + ["sms"]}
+
+
+# ---- User-scoped finance data ----
+
+def _resolve_user_id(user_id: str | None, header_user_id: str | None) -> str:
+    """Resolve the caller's data namespace.
+
+    The prototype has no auth yet. Clients may pass `?user_id=` or the
+    `X-User-Id` header; the header wins when both are present. The value is
+    used as the PostgreSQL partition key, so it is validated and bounded.
+    """
+    resolved = (header_user_id or user_id or "demo-user").strip()
+    if not resolved or len(resolved) > 120:
+        raise HTTPException(400, "A valid user identifier is required")
+    return resolved
+
+
+@app.get("/api/data/{resource}")
+def list_finance_data(
+    resource: str,
+    user_id: str | None = None,
+    x_user_id: str | None = Header(default=None),
+) -> dict:
+    if resource not in database.ALLOWED_RESOURCES:
+        raise HTTPException(404, "Unknown finance resource")
+    owner = _resolve_user_id(user_id, x_user_id)
+    try:
+        return {"success": True, "data": database.list_records(owner, resource)}
+    except Exception as exc:
+        raise HTTPException(503, "PostgreSQL is unavailable") from exc
+
+
+@app.put("/api/data/{resource}/{record_id}")
+def put_finance_data(
+    resource: str,
+    record_id: str,
+    payload: dict,
+    user_id: str | None = None,
+    x_user_id: str | None = Header(default=None),
+) -> dict:
+    if resource not in database.ALLOWED_RESOURCES:
+        raise HTTPException(404, "Unknown finance resource")
+    owner = _resolve_user_id(user_id, x_user_id)
+    payload = {**payload, "id": record_id}
+    try:
+        saved = database.save_record(owner, resource, record_id, payload)
+        return {"success": True, "data": saved}
+    except Exception as exc:
+        raise HTTPException(503, "PostgreSQL is unavailable") from exc
+
+
+@app.delete("/api/data/{resource}/{record_id}")
+def delete_finance_data(
+    resource: str,
+    record_id: str,
+    user_id: str | None = None,
+    x_user_id: str | None = Header(default=None),
+) -> dict:
+    if resource not in database.ALLOWED_RESOURCES:
+        raise HTTPException(404, "Unknown finance resource")
+    owner = _resolve_user_id(user_id, x_user_id)
+    try:
+        return {"success": True, "deleted": database.remove_record(owner, resource, record_id)}
+    except Exception as exc:
+        raise HTTPException(503, "PostgreSQL is unavailable") from exc
 
 
 @app.get("/health/models", response_model=ModelHealthResponse)

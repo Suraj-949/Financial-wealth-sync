@@ -5,6 +5,7 @@ import '../../widgets/common.dart';
 import '../../utils/formatters.dart';
 import '../../models/models.dart';
 import '../../services/finance_repository.dart';
+import '../../services/finance_refresh.dart';
 import '../dashboard/widgets/charts.dart';
 
 class BudgetTab extends StatefulWidget {
@@ -14,7 +15,8 @@ class BudgetTab extends StatefulWidget {
   State<BudgetTab> createState() => _BudgetTabState();
 }
 
-class _BudgetTabState extends State<BudgetTab> {
+class _BudgetTabState extends State<BudgetTab>
+    with FinanceDataListener<BudgetTab> {
   final repo = getRepository();
 
   List<BudgetItem>? _items;
@@ -25,6 +27,9 @@ class _BudgetTabState extends State<BudgetTab> {
     super.initState();
     _load();
   }
+
+  @override
+  void onFinanceDataChanged() => _load();
 
   Future<void> _load() async {
     try {

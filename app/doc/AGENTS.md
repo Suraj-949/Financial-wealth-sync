@@ -1,47 +1,65 @@
-# AGENTS.md — WealthSync Frontend
+# AGENTS.md — WealthSync Frontend Guidelines
 
-Scope: `app/` — the Flutter mobile app (Android-first, dark fintech theme).
+Scope: `app/` — The Flutter mobile application (Android-first, dark premium fintech theme).
+
+---
 
 ## Environment & Commands
 
-- **Flutter:** `C:\flutter\bin\flutter.bat` (Flutter 3.38.9, Dart 3.10.8).
-- **Verification — ALWAYS run after UI changes (from `app\`):**
-  1. `flutter analyze`
-  2. `flutter test`
-  3. `flutter build apk --debug`
-- State management is plain `StatefulWidget` — no extra packages beyond the current deps
-  (`fl_chart`, `http`, `intl`). Run `flutter pub get` after adding deps.
+- **Flutter SDK**: `C:\flutter\bin\flutter.bat` (Flutter 3.38.9, Dart 3.10.8).
+- **Mandatory Verification Workflow** (run from `app\`):
+  1. `flutter analyze` — must report **0 issues**.
+  2. `flutter test` — all **20 tests** must pass green.
+  3. `flutter build apk --debug` — verify clean build compilation.
+- **Dependency Management**:
+  - Run `flutter pub get` after updating `pubspec.yaml`.
+  - State management uses built-in Flutter primitives (`StatefulWidget`, `ValueNotifier`, `ListenableBuilder`) — do not introduce heavy state packages (Bloc, Riverpod, Redux) without explicit direction.
 
-## Architecture rules (golden)
+---
 
-1. **Widgets must never calculate financial figures.** Every number comes from a data object
-   delivered by `lib/services/finance_repository.dart`. Use `MockFinanceRepository` for dev only.
-2. **Never fake confidence/values.** `MockData` is labelled mock (e.g. `predictionConfidence`
-   comment). Production values come from the backend — no fabricated figures in release code.
-3. **Share the theme, don't invent styles.** `AppColors`, `AppTheme` from `app/theme.dart`;
-   `AppCard`, `SectionHeader`, `Pill`, `TagBadge`, `EmptyState`, `ErrorState`, `Skeleton` from
-   `widgets/common.dart`. ⚠️ Use `TagBadge`, not `Badge` (Material 3's `Badge` widget collides).
-4. **One feature, one folder.** `screens/<name>/<name>_screen.dart`, wired via `Navigator.push`;
-   shell tabs live in `screens/shell/app_shell.dart`. Screen-local sub-widgets go in
-   `screens/<name>/widgets/`; shared widgets go in `widgets/`.
-5. **No arithmetic in build().** Sums/percentages belong in the repository/models layer.
-6. **Flutter 3.38 gotchas:** Material 3 `Badge` exists → use `TagBadge`. Avoid `const` around
-   widgets whose children are runtime values (callbacks/methods) — the analyzer rejects it.
+## Architecture Rules (Golden Rules)
 
-## Key files
-- `lib/main.dart` → `lib/app/app.dart` (WealthSyncApp) → `lib/screens/shell/app_shell.dart` (tabs).
-- `lib/services/finance_repository.dart` — repo IFace, `DashboardData`, `MockFinanceRepository`,
-  `getRepository()`, `ApiClient` (ML endpoints; swap mocks for `GET /api/dashboard` next).
-- `lib/services/mock_data.dart` — demo data (labelled).
-- `lib/models/models.dart` — all domain types.
-- Screens: `screens/dashboard/`, `transactions/`, `budget/`, `goals/`, `more/`, `accounts/`,
-  `alerts/`, `recommendations/`, `copilot/`, `xai/`, `sms/`, `profile/`, `stub/`.
-- Tests: `test/widget_test.dart` (pumps `WealthSyncApp` through the dashboard; no repo injection needed).
+1. **Widgets Never Calculate Financial Figures**:
+   - Every financial number, sum, delta, or percentage must be calculated in the model or repository layer (`lib/services/finance_repository.dart` or `models.dart`).
+   - `build()` methods must only render data objects; never perform business arithmetic inline.
+2. **Never Fake Production Confidence or Values**:
+   - `MockData` in `mock_data.dart` is explicitly marked as mock data for offline prototype mode.
+   - Production screens must use `ApiFinanceRepository` which queries real endpoints (`/api/ml/*`, `/api/data/*`, `/api/sms/*`) and provides graceful fallbacks.
+3. **Respect Theming and Component Standards**:
+   - Colors and styles come exclusively from `AppColors` and `AppTheme` in `lib/app/theme.dart`.
+   - Reusable widgets live in `lib/widgets/common.dart` (`AppCard`, `SectionHeader`, `Pill`, `TagBadge`, `EmptyState`, `ErrorState`, `Skeleton`).
+   - ⚠️ **Important**: Use `TagBadge`, never Material 3's built-in `Badge` widget (which collides with our badge design).
+4. **Strict Modular Folder Layout**:
+   - Each major screen lives in its own dedicated directory under `lib/screens/<feature>/`.
+   - Screen-specific sub-widgets belong in `lib/screens/<feature>/widgets/`. Shared widgets belong in `lib/widgets/`.
+5. **Dual Mode & Reactive Data Flow**:
+   - Respect `demoModeEnabled` and `demoModeListenable`. When demo mode is toggled, all screens must reload from the active source.
+   - After adding or deleting records, call `notifyFinanceDataChanged()` to trigger reactive refresh via `FinanceDataListener`.
+6. **Flutter 3.38 Testing Constraints**:
+   - Avoid `pumpAndSettle()` on screens with infinite looping animations (such as skeletons); use `pump()` with fixed durations.
+   - `MockFinanceRepository.setDelay(0)` is required in widget tests to avoid timer deadlocks.
 
-## Verify before finishing
-`flutter analyze` (0 issues) → `flutter test` (all pass — avoid `pumpAndSettle` on infinite
-skeleton/animations) → `flutter build apk --debug` succeeds.
+---
 
-## Status
-- Full spec UI built; analyze clean, tests green, debug APK builds.
-- Next: wire real API-backed dashboard + copilot replies from the backend.
+## Key Files Reference
+
+- `lib/main.dart`: App bootstrapper loading SharedPreferences preferences and running `WealthSyncApp`.
+- `lib/app/app.dart`: App root setting up the MaterialApp, routing, and `AppShell`.
+- `lib/screens/shell/app_shell.dart`: 5-tab shell (Home, Transactions, Budget, Goals, More) preserving state with `IndexedStack`.
+- `lib/services/finance_repository.dart`: Core repository definitions, `DashboardData` aggregate, `MockFinanceRepository`, `ApiFinanceRepository`, and `ApiClient`.
+- `lib/services/sms_inbox_service.dart`: Android SMS inbox reader with permission handling, banking keywords regex, and pagination.
+- `lib/services/sms_transaction_importer.dart`: Automated transaction extraction from bank SMS into ledger entries.
+- `lib/screens/sms/sms_classifier_screen.dart`: Two-tab SMS screen featuring single-message testing and full SMS timeline with month picker.
+- `lib/screens/risk/risk_screen.dart`: Live UCI credit risk assessment screen with SHAP XAI breakdown.
+- `lib/screens/xai/xai_screen.dart`: Explainable AI screen showing SHAP factor contribution bars.
+
+---
+
+## Test Inventory (20 Passing Tests)
+
+- `test/api_client_test.dart`: Verifies async deserialization for predict and explain API calls.
+- `test/live_dashboard_test.dart`: Verifies live PostgreSQL row aggregation and handling of empty accounts.
+- `test/prediction_card_test.dart`: Verifies BLS ML forecast card rendering on dashboard.
+- `test/sms_classifier_test.dart`: Validates two-stage SMS classification approval and spam rejection.
+- `test/sms_timeline_test.dart`: Validates inbox message date formatting and month-picker highlights.
+- `test/widget_test.dart`: Tests root app bootstrap, financial summary cards, and navigation.

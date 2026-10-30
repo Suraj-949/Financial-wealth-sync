@@ -1,54 +1,81 @@
-# AGENTS.md — WealthSync Backend (opencode / agent instructions)
+# AGENTS.md — WealthSync Backend Guidelines
 
-Scope: `backend/` (FastAPI service) + the `ml/` pipeline it consumes.
+Scope: `backend/` (FastAPI service), its PostgreSQL document persistence layer, and the `ml/` and `sms/` pipelines it consumes.
+
+---
 
 ## Environment & Commands
 
-- **Python:** use the Anaconda interpreter. `fastapi 0.141.1` + `uvicorn 0.53.0` are installed.
-- **Run the API:** `powershell run_backend.ps1` (from `backend\`) — uvicorn on `:8000`, opens `/docs`.
-- **Verify endpoints:** `Invoke-RestMethod http://127.0.0.1:8000/health`, `/models`, then sample
-  predict/explain on at least one model per change.
-- **Re-train / evaluate ML:** run with the Anaconda python, e.g.
-  - `ml\training\train_spending.py` (and savings/wellness/risk/payment)
-  - `ml\evaluation\evaluate_models.py`
-  - `ml\explainability\shap_explainer.py`
-- Model artifacts live in `ml\artifacts\<model>\`; the backend reads them at startup (lazily cache).
+- **Python Interpreter**: Use the Anaconda Python interpreter (`C:\Users\SURAJ\anaconda3\python.exe`). System `python` might lack required packages or have permissions issues.
+- **Run Backend**:
+  ```powershell
+  # Using the PowerShell launcher:
+  powershell -File backend\run_backend.ps1
+
+  # Or manually from the repository root:
+  C:\Users\SURAJ\anaconda3\python.exe -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+  ```
+- **Run Database Helper**:
+  ```powershell
+  powershell -File backend\start_database.ps1
+  ```
+- **Execute Pytest Suite (39 Tests)**:
+  ```powershell
+  $env:KMP_DUPLICATE_LIB_OK="TRUE"
+  C:\Users\SURAJ\anaconda3\python.exe -m pytest backend/test_ml_api.py backend/test_sms_api.py -v
+  ```
+- **Verify Endpoints Manually**:
+  ```powershell
+  Invoke-RestMethod http://127.0.0.1:8000/health
+  Invoke-RestMethod http://127.0.0.1:8000/health/models
+  Invoke-RestMethod http://127.0.0.1:8000/models
+  ```
+
+---
 
 ## Golden Rules
 
-1. **Backend serves; ML trains.** Never put feature engineering / training logic in `backend/`.
-   `ml/` produces artifacts (`model.joblib`, `scaler.pkl`, `feature_columns.json`,
-   `label_mapping.json`, `model_metadata.json`); `backend/` only loads and scores.
-2. **Keep the contract stable.** `main.py` endpoints `/health`, `/models`, `/sample/{model}`,
-   `/predict/{model}`, `/explain/{model}`, `/api/sms/classify` are consumed by the Flutter app —
-   do not rename/remove without updating `app/lib/services/finance_repository.dart`.
-3. **Report model limits honestly.** Never return inflated confidence. Debug/`/models` metadata
-   reflects real training metrics (payment near-random; spending/savings R² weak; wellness label
-   is rule-derived).
-4. **Relative imports, not sys.path hacks.** `backend/` is a package (`__init__.py` exists):
-   use `from . import services`.
-5. **No synthetic data.** Predictions come from models; samples come from real test-window rows.
+1. **Backend Serves; ML Trains**:
+   - Never implement model training, hyperparameter tuning, or dataset preprocessing loops inside `backend/`.
+   - `ml/` and `sms/` produce artifacts (`model.joblib`, `preprocessor.joblib`, `feature_columns.json`, `metadata.json`); `backend/` only loads, caches, and scores.
+2. **Keep the Contract Stable**:
+   - Endpoints (`/health`, `/models`, `/api/ml/spending/predict`, `/api/ml/risk/predict`, `/api/sms/classify`, `/api/data/{resource}`) are consumed directly by the Flutter app.
+   - Do not alter route paths, required fields, or response structures without synchronizing with `app/lib/services/finance_repository.dart`.
+3. **Report Model Limits Honestly**:
+   - Never artificially inflate predictions or confidences.
+   - Endpoint `/models` exposes real test metrics directly from `metadata.json` (e.g. payment accuracy near random chance, synthetic circularity on wellness score, BLS spending USD scale).
+4. **Relative Imports, Not sys.path Hacks**:
+   - `backend/` is a structured Python package (`__init__.py` present).
+   - Use package-relative imports: `from . import services, samples, sms_service, database`.
+5. **No Synthetic Training Data in Production**:
+   - Samples delivered via `/sample/{model}` must come from real test-window rows (`samples.py`), not randomly generated numbers.
+6. **Resilient Persistence**:
+   - The backend must start cleanly even if PostgreSQL is temporarily offline.
+   - In case of database disconnection, `/health` reports `database: unavailable`, ML and SMS endpoints continue operating normally, and data endpoints return HTTP 503.
 
-## Layout (backend + consumed ml / sms artifacts)
-- `backend/main.py` — routes + CORS + `/docs` wiring.
-- `backend/services.py` — `PredictionService`: artifact loading + predict/explain.
-- `backend/samples.py` — test-window sample payloads per model.
-- `backend/sms_service.py` — adapter over the `sms/` package (spam filter → categoriser).
-- `backend/requirements.txt` / `run_backend.ps1` — deps + run script.
-- `ml/artifacts/<model>/*` — the files the backend serves (see `ml/README.md`).
-- `sms/artifacts/*` — the two-stage SMS pipeline the backend serves (see `sms/README.md`).
+---
 
-## SMS pipeline
-- Logic + dataset live in `sms/sms_classifier.py`; artifacts in `sms/artifacts/`.
-- Trained once and persisted; the backend **never retrains** on request.
-- Verify: `POST /api/sms/classify` with a credited SMS (→ `credit`), a lottery SMS
-  (→ discarded), and a spend SMS (→ `debit`).
+## Layout Reference
 
-## Verify before finishing
-Every change to `backend/`: restart uvicorn, hit `/health` and `/models`, then run one
-`/predict/{model}` + `/explain/{model}` and confirm the response shape is unchanged.
+- `backend/main.py`: FastAPI app instance, CORS middleware, custom exception handlers, and route definitions.
+- `backend/services.py`: Prediction service handling model caching, DataFrame construction, inference, and SHAP explainability.
+- `backend/database.py`: SQLAlchemy engine, `FinanceRecord` model (JSONB document storage), and CRUD functions.
+- `backend/sms_service.py`: Adapter wrapping the `sms` package (`sms_classifier.py`).
+- `backend/schemas.py`: Pydantic v2 schemas enforcing strict request validation (`extra='forbid'`).
+- `backend/samples.py`: Static sample feature vectors from the model test windows.
+- `backend/test_ml_api.py`: 27 pytest tests validating ML endpoints, data types, and error codes.
+- `backend/test_sms_api.py`: 12 pytest tests validating SMS classifier logic, batch handling, and error cases.
+- `ml/models/`: Serialized production model pipelines (BLS spending and UCI risk).
+- `ml/artifacts/`: Serialized longitudinal INR models (spending, savings, wellness, risk, payment).
+- `sms/artifacts/`: Serialized two-stage SMS classification vectorizers and models.
 
-## Status
-- All 5 models trained, evaluated, SHAP'd; SMS two-stage classifier integrated.
-- Backend serving on `:8000`.
-- Next: `GET /api/dashboard` aggregate + copilot grounding pipeline.
+---
+
+## Verification Checklist
+
+Before completing any changes to `backend/`:
+1. Check that PostgreSQL is accessible (`Invoke-RestMethod http://127.0.0.1:8000/health`).
+2. Run `pytest backend/test_ml_api.py backend/test_sms_api.py -v` — all 39 tests must pass.
+3. Test one production prediction call (`POST /api/ml/spending/predict` or `POST /api/ml/risk/predict`).
+4. Test one SMS classification call (`POST /api/sms/classify`).
+5. Confirm standard error formatting (`{"success": false, "error": {"code": "...", "message": "..."}}`).

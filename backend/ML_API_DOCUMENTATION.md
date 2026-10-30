@@ -25,6 +25,9 @@ Endpoints at a glance:
 | SMS | `POST /api/sms/classify` | `{text}` | status + category + confidences |
 | SMS | `POST /api/sms/classify/batch` | `{messages: [...]}` | `{count, results: [...]}` |
 | SMS | `GET /api/sms/health` | — | pipeline availability + metadata |
+| Data | `GET /api/data/{resource}` | `?user_id=...` or `X-User-Id` | `{success: true, data: [...]}` |
+| Data | `PUT /api/data/{resource}/{id}` | JSON payload document | `{success: true, data: {...}}` |
+| Data | `DELETE /api/data/{resource}/{id}` | `?user_id=...` or `X-User-Id` | `{success: true, deleted: true}` |
 
 ## Model Locations
 
@@ -360,6 +363,92 @@ Returns `{ "sms": { "status": "available", "categories": ["credit","debit","othe
 Empty / whitespace-only text and empty batches return `400` with the standard
 `{ "success": false, "error": { "code", "message" } }` envelope.
 
+## User Finance Data Persistence (`/api/data/*`)
+
+WealthSync persists user ledger documents directly to PostgreSQL JSONB storage, partitioned cleanly by user identity.
+
+### Supported Resources
+- `transactions` — Financial income/expense ledger entries
+- `accounts` — Bank accounts, savings balances, and credit cards
+- `budgets` — Spending limits and category targets
+- `goals` — Savings milestones and target deadlines
+- `alerts` — System notifications and financial triggers
+- `recommendations` — AI-generated actionable advice
+
+### User Namespace Identification
+Requests identify their partition namespace via:
+- Query parameter: `?user_id=local-user`
+- HTTP header: `X-User-Id: local-user` (takes precedence when both are provided)
+If omitted, defaults to `"demo-user"`.
+
+#### GET `/api/data/{resource}`
+List all records for a given resource in the user's namespace.
+
+**Request:** `GET /api/data/transactions?user_id=local-user`
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "tx-101",
+      "merchant": "Supermarket",
+      "category": "groceries",
+      "type": "expense",
+      "amount": 2450.0,
+      "date": "2026-10-28T14:30:00Z",
+      "note": "Weekly grocery shopping"
+    }
+  ]
+}
+```
+
+#### PUT `/api/data/{resource}/{record_id}`
+Upsert (insert or overwrite) a single document by record ID.
+
+**Request:**
+`PUT /api/data/transactions/tx-101?user_id=local-user`
+```json
+{
+  "merchant": "Supermarket",
+  "category": "groceries",
+  "type": "expense",
+  "amount": 2550.0,
+  "date": "2026-10-28T14:30:00Z",
+  "note": "Weekly grocery shopping (updated)"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "tx-101",
+    "merchant": "Supermarket",
+    "category": "groceries",
+    "type": "expense",
+    "amount": 2550.0,
+    "date": "2026-10-28T14:30:00Z",
+    "note": "Weekly grocery shopping (updated)"
+  }
+}
+```
+
+#### DELETE `/api/data/{resource}/{record_id}`
+Delete a record from the user's namespace.
+
+**Request:** `DELETE /api/data/transactions/tx-101?user_id=local-user`
+
+**Response:**
+```json
+{
+  "success": true,
+  "deleted": true
+}
+```
+
 ## Architecture
 
 ```
@@ -377,8 +466,9 @@ Response Schema
 ```
 
 Key files:
-- `backend/main.py` - FastAPI routes and exception handlers
-- `backend/services.py` - Model loading, caching, prediction logic
+- `backend/main.py` - FastAPI routes, CORS, lifespan, and exception handlers
+- `backend/services.py` - Model loading, caching, prediction, and SHAP explainability logic
+- `backend/database.py` - PostgreSQL SQLAlchemy engine, JSONB document model, and CRUD operations
 - `backend/sms_service.py` - SMS two-stage classifier adapter (`sms/` package)
 - `backend/schemas.py` - Pydantic request/response schemas
 - `backend/test_ml_api.py` / `backend/test_sms_api.py` - Test suites

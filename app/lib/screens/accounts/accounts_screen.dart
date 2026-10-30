@@ -5,6 +5,7 @@ import '../../widgets/common.dart';
 import '../../utils/formatters.dart';
 import '../../models/models.dart';
 import '../../services/finance_repository.dart';
+import '../../services/finance_refresh.dart';
 
 class AccountsScreen extends StatefulWidget {
   const AccountsScreen({super.key});
@@ -13,7 +14,8 @@ class AccountsScreen extends StatefulWidget {
   State<AccountsScreen> createState() => _AccountsScreenState();
 }
 
-class _AccountsScreenState extends State<AccountsScreen> {
+class _AccountsScreenState extends State<AccountsScreen>
+    with FinanceDataListener<AccountsScreen> {
   final repo = getRepository();
 
   List<Account>? _items;
@@ -24,6 +26,9 @@ class _AccountsScreenState extends State<AccountsScreen> {
     super.initState();
     _load();
   }
+
+  @override
+  void onFinanceDataChanged() => _load();
 
   Future<void> _load() async {
     try {
@@ -96,7 +101,15 @@ class _AccountsScreenState extends State<AccountsScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              for (final account in items) _accountCard(account),
+              if (items.isEmpty)
+                const EmptyState(
+                  icon: Icons.account_balance_wallet_outlined,
+                  title: 'No accounts linked',
+                  message:
+                      'Accounts stored for this user will appear here.',
+                )
+              else
+                for (final account in items) _accountCard(account),
             ],
           ],
         ),

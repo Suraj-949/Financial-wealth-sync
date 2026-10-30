@@ -4,6 +4,7 @@ import '../../app/theme.dart';
 import '../../widgets/common.dart';
 import '../../models/models.dart';
 import '../../services/finance_repository.dart';
+import '../../services/finance_refresh.dart';
 
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
@@ -12,7 +13,8 @@ class AlertsScreen extends StatefulWidget {
   State<AlertsScreen> createState() => _AlertsScreenState();
 }
 
-class _AlertsScreenState extends State<AlertsScreen> {
+class _AlertsScreenState extends State<AlertsScreen>
+    with FinanceDataListener<AlertsScreen> {
   final repo = getRepository();
 
   List<AlertItem>? _items;
@@ -23,6 +25,9 @@ class _AlertsScreenState extends State<AlertsScreen> {
     super.initState();
     _load();
   }
+
+  @override
+  void onFinanceDataChanged() => _load();
 
   Future<void> _load() async {
     try {

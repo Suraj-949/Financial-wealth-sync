@@ -6,6 +6,7 @@ import '../alerts/alerts_screen.dart';
 import '../copilot/copilot_chat_screen.dart';
 import '../profile/profile_screen.dart';
 import '../sms/sms_classifier_screen.dart';
+import 'settings_screen.dart';
 import '../stub/stub_screen.dart';
 
 class MoreScreen extends StatelessWidget {
@@ -22,55 +23,61 @@ class MoreScreen extends StatelessWidget {
         icon: Icons.trending_up,
         color: AppColors.income,
         title: 'Investments',
-        page: const StubScreen(title: 'Investments', icon: Icons.trending_up)
+        page: const StubScreen(title: 'Investments', icon: Icons.trending_up),
       ),
       (
         icon: Icons.account_balance,
         color: AppColors.warning,
         title: 'Loans & EMIs',
-        page: const StubScreen(title: 'Loans & EMIs', icon: Icons.account_balance)
+        page: const StubScreen(
+          title: 'Loans & EMIs',
+          icon: Icons.account_balance,
+        ),
       ),
       (
         icon: Icons.credit_card,
         color: AppColors.ai,
         title: 'Credit Cards',
-        page: const StubScreen(title: 'Credit Cards', icon: Icons.credit_card)
+        page: const StubScreen(title: 'Credit Cards', icon: Icons.credit_card),
       ),
       (
         icon: Icons.description_outlined,
         color: AppColors.savings,
         title: 'Reports',
-        page: const StubScreen(title: 'Reports', icon: Icons.description_outlined)
+        page: const StubScreen(
+          title: 'Reports',
+          icon: Icons.description_outlined,
+        ),
       ),
       (
         icon: Icons.notifications_none,
         color: AppColors.warning,
         title: 'Alerts',
-        page: const AlertsScreen()
+        page: const AlertsScreen(),
       ),
       (
         icon: Icons.smart_toy_outlined,
         color: AppColors.accent,
         title: 'AI Copilot',
-        page: const CopilotChatScreen()
+        page: const CopilotChatScreen(),
       ),
       (
         icon: Icons.mark_email_unread_outlined,
         color: AppColors.savings,
         title: 'SMS Payments',
-        page: const SmsClassifierScreen()
+        page: const SmsClassifierScreen(),
       ),
       (
         icon: Icons.settings_outlined,
         color: AppColors.textMuted,
         title: 'Settings',
-        page: const StubScreen(title: 'Settings', icon: Icons.settings_outlined)
+        page: const SettingsScreen(),
       ),
       (
         icon: Icons.person_outline,
         color: AppColors.accent,
         title: 'Profile',
-        page: const ProfileScreen()
+        page: const ProfileScreen(),
       ),
     ];
 
@@ -79,8 +86,14 @@ class MoreScreen extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
         children: [
-          const Text('More',
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 21, fontWeight: FontWeight.w800)),
+          const Text(
+            'More',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 21,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
           const SizedBox(height: 14),
           AppCard(
             child: Column(
@@ -90,7 +103,10 @@ class MoreScreen extends StatelessWidget {
                     onTap: () => _push(context, entries[i].page),
                     borderRadius: BorderRadius.circular(10),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 13),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 13,
+                      ),
                       child: Row(
                         children: [
                           Container(
@@ -101,17 +117,28 @@ class MoreScreen extends StatelessWidget {
                               borderRadius: BorderRadius.circular(10),
                             ),
                             alignment: Alignment.center,
-                            child: Icon(entries[i].icon, color: entries[i].color, size: 18),
+                            child: Icon(
+                              entries[i].icon,
+                              color: entries[i].color,
+                              size: 18,
+                            ),
                           ),
                           const SizedBox(width: 14),
                           Expanded(
-                            child: Text(entries[i].title,
-                                style: const TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 14.5,
-                                    fontWeight: FontWeight.w600)),
+                            child: Text(
+                              entries[i].title,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
-                          const Icon(Icons.chevron_right, color: AppColors.textMuted, size: 20),
+                          const Icon(
+                            Icons.chevron_right,
+                            color: AppColors.textMuted,
+                            size: 20,
+                          ),
                         ],
                       ),
                     ),

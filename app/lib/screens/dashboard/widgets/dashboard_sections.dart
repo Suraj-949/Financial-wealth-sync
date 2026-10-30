@@ -25,6 +25,7 @@ class DashboardBody extends StatelessWidget {
   final VoidCallback onExplainScore;
   final VoidCallback onViewAllTransactions;
   final VoidCallback onManageAccounts;
+  final VoidCallback onAddTransaction;
 
   const DashboardBody({
     super.key,
@@ -35,6 +36,7 @@ class DashboardBody extends StatelessWidget {
     required this.onExplainScore,
     required this.onViewAllTransactions,
     required this.onManageAccounts,
+    required this.onAddTransaction,
   });
 
   @override
@@ -54,7 +56,7 @@ class DashboardBody extends StatelessWidget {
             child: _RowHeader(title: 'Quick Actions'),
           ),
           QuickActionsGrid(
-            onAdd: () => cashStub(context, 'Add transaction'),
+            onAdd: onAddTransaction,
             onUpload: () => cashStub(context, 'Upload statement'),
             onBudget: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const BudgetTab()),
@@ -426,6 +428,15 @@ class PredictionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ml = data.mlPrediction;
+    if (ml == null &&
+        data.isLive &&
+        data.historicExpense.every((value) => value <= 0)) {
+      return const EmptyState(
+        icon: Icons.auto_graph,
+        title: 'No projection yet',
+        message: 'Add transactions to build your expense trend.',
+      );
+    }
     return ml != null ? _modelForecast(ml) : _mockTrend();
   }
 
@@ -484,23 +495,39 @@ class PredictionCard extends StatelessWidget {
     );
   }
 
-  /// Mock forecast — fallback while the backend is down, or for pure-demo runs.
+  /// Projection from the user's own history (live mode) or the mock trend.
   Widget _mockTrend() {
     final up = data.predictedDeltaPct >= 0;
+    final live = data.isLive;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            const Expanded(
-              child: Text('Predicted Expenses · Next Month',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+            Expanded(
+              child: Text(
+                live
+                    ? 'Projected Expenses · Next Month'
+                    : 'Predicted Expenses · Next Month',
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 13,
+                ),
+              ),
             ),
-            Text(Formatters.pct(data.predictionConfidence * 100),
-                style: const TextStyle(color: AppColors.ai, fontSize: 12, fontWeight: FontWeight.w700)),
+            Text(
+              live ? 'projection' : Formatters.pct(data.predictionConfidence * 100),
+              style: const TextStyle(
+                color: AppColors.ai,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(width: 4),
-            const Text('confidence',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+            Text(
+              live ? 'from history' : 'confidence',
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+            ),
           ],
         ),
         const SizedBox(height: 4),
@@ -517,7 +544,7 @@ class PredictionCard extends StatelessWidget {
                   Icon(up ? Icons.arrow_upward : Icons.arrow_downward,
                       size: 15, color: up ? AppColors.danger : AppColors.income),
                   const SizedBox(width: 2),
-                  Text('${data.predictedDeltaPct.abs()}% vs this month',
+                  Text('${data.predictedDeltaPct.abs().toStringAsFixed(1)}% vs this month',
                       style: TextStyle(
                           color: up ? AppColors.danger : AppColors.income,
                           fontSize: 12.5,
@@ -528,8 +555,12 @@ class PredictionCard extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 2),
-        const Text('Dashed purple segment = predicted · confidence shown as mock during UI dev',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+        Text(
+          live
+              ? 'Projected from your recorded transactions. Add income and expenses to improve it.'
+              : 'Dashed purple segment = predicted · confidence shown as mock during UI dev',
+          style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+        ),
         const SizedBox(height: 8),
         ExpensePredictionChart(
           historic: data.historicExpense,

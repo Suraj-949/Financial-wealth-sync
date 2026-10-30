@@ -4,6 +4,7 @@ import '../../app/theme.dart';
 import '../../widgets/common.dart';
 import '../../models/models.dart';
 import '../../services/finance_repository.dart';
+import '../../services/finance_refresh.dart';
 
 class RecommendationsScreen extends StatefulWidget {
   final String? initialCategory;
@@ -14,7 +15,8 @@ class RecommendationsScreen extends StatefulWidget {
   State<RecommendationsScreen> createState() => _RecommendationsScreenState();
 }
 
-class _RecommendationsScreenState extends State<RecommendationsScreen> {
+class _RecommendationsScreenState extends State<RecommendationsScreen>
+    with FinanceDataListener<RecommendationsScreen> {
   final repo = getRepository();
 
   List<Recommendation>? _items;
@@ -37,6 +39,9 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
     _filter = widget.initialCategory ?? 'All';
     _load();
   }
+
+  @override
+  void onFinanceDataChanged() => _load();
 
   Future<void> _load() async {
     try {
