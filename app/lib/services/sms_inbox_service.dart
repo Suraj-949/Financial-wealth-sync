@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_sms_inbox/flutter_sms_inbox.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -19,9 +22,8 @@ class InboxSms {
 
   /// Stable key for per-message UI state. Indices cannot be used because the
   /// visible list is filtered by month and grows when older pages load.
-  String get key => id != null
-      ? 'id:$id'
-      : '${date.microsecondsSinceEpoch}:${address.hashCode}:${body.hashCode}';
+  String get key =>
+      '${date.millisecondsSinceEpoch}|${address.trim()}|${body.trim()}';
 
   DateTime get day => DateTime(date.year, date.month, date.day);
 
@@ -62,6 +64,21 @@ class SmsInboxService {
   /// page further back (up to [maxWindow]) when the user browses older months.
   static const int defaultPageSize = 500;
 
+  static const EventChannel _incomingChannel =
+      EventChannel('wealthsync/sms_incoming');
+
+  Stream<InboxSms> get incomingMessages =>
+      _incomingChannel.receiveBroadcastStream().map((event) {
+        final value = (event as Map).cast<String, dynamic>();
+        return InboxSms(
+          address: (value['address'] as String?) ?? '',
+          body: (value['body'] as String?) ?? '',
+          date: DateTime.fromMillisecondsSinceEpoch(
+            (value['dateMs'] as num).toInt(),
+          ),
+        );
+      });
+
   SmsQuery? _query;
   SmsQuery get _smsQuery => _query ??= SmsQuery();
 
@@ -75,12 +92,8 @@ class SmsInboxService {
     caseSensitive: false,
   );
 
-  // ── Spam / noise filters ──────────────────────────────────────────────────
-  static final _spamKeywords = RegExp(
-    r'\b(lottery|won|prize|offer|discount|sale|click|link|verify|'
-    r'congratulation|free|gift|earn|investment opportunity)\b',
-    caseSensitive: false,
-  );
+  // Candidate filter only; spam decisions are left to the model and user.
+  bool isBankSmsCandidate(String text) => _bankKeywords.hasMatch(text);
 
   /// Request READ_SMS permission. Returns true if granted.
   Future<bool> requestPermission() async {
@@ -132,7 +145,7 @@ class SmsInboxService {
       final address = msg.sender ?? '';
       final date = msg.date ?? msg.dateSent;
       if (date == null) continue;
-      if (_bankKeywords.hasMatch(body) && !_spamKeywords.hasMatch(body)) {
+      if (isBankSmsCandidate(body)) {
         filtered.add(InboxSms(
           id: msg.id,
           address: address,

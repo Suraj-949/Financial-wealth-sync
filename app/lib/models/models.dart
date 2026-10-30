@@ -389,6 +389,7 @@ class SmsClassification {
   final double confidence;
   final double spamProbability;
   final Map<String, double> categoryProbabilities;
+  final bool resolvedFromText;
 
   const SmsClassification({
     required this.text,
@@ -400,6 +401,7 @@ class SmsClassification {
     required this.confidence,
     required this.spamProbability,
     this.categoryProbabilities = const {},
+    this.resolvedFromText = false,
   });
 
   bool get isCredit => category == 'credit';
@@ -416,6 +418,7 @@ class SmsClassification {
       displayCategory: (json['display_category'] as String?) ?? 'Unknown',
       confidence: ((json['confidence'] as num?) ?? 0).toDouble(),
       spamProbability: ((json['spam_probability'] as num?) ?? 0).toDouble(),
+      resolvedFromText: (json['resolved_from_text'] as bool?) ?? false,
       categoryProbabilities: rawProbs.map(
         (k, v) => MapEntry(k.toString(), (v as num).toDouble()),
       ),

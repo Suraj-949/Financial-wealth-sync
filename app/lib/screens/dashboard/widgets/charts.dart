@@ -211,6 +211,24 @@ class ExpensePredictionChart extends StatelessWidget {
     final axisLabels =
         pred == null ? labels.take(historic.length).toList(growable: false) : labels;
     final predictedX = pred == null ? -1 : historic.length;
+    final values = [
+      ...historic.where((value) => value.isFinite),
+      if (pred != null && pred.isFinite) pred,
+    ];
+    final dataMin = values.isEmpty
+        ? 0.0
+        : values.reduce((a, b) => a < b ? a : b);
+    final dataMax = values.isEmpty
+        ? 1.0
+        : values.reduce((a, b) => a > b ? a : b);
+    final chartMinY = math.min(0.0, dataMin);
+    final paddedMaxY = dataMax <= 0 ? 1.0 : dataMax * 1.12;
+    final yInterval = _niceChartInterval((paddedMaxY - chartMinY) / 4);
+    final minY = (chartMinY / yInterval).floorToDouble() * yInterval;
+    final maxY = math.max(
+      yInterval,
+      (paddedMaxY / yInterval).ceilToDouble() * yInterval,
+    ).toDouble();
 
     final bars = <LineChartBarData>[
       LineChartBarData(
@@ -266,15 +284,15 @@ class ExpensePredictionChart extends StatelessWidget {
     }
 
     return SizedBox(
-      height: 200,
+      height: 230,
       child: LineChart(
         LineChartData(
-          minY: 20000,
-          maxY: 50000,
+          minY: minY,
+          maxY: maxY,
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
-            horizontalInterval: 10000,
+            horizontalInterval: yInterval,
             getDrawingHorizontalLine: (v) => FlLine(
               color: AppColors.line.withValues(alpha: .7),
               strokeWidth: 1,
@@ -289,7 +307,9 @@ class ExpensePredictionChart extends StatelessWidget {
                 getTitlesWidget: (v, meta) => Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: Text(
-                    '₹${(v / 1000).round()}k',
+                    v.abs() >= 1000
+                        ? '₹${(v / 1000).toStringAsFixed(0)}k'
+                        : '₹${v.toStringAsFixed(0)}',
                     style: const TextStyle(color: AppColors.textMuted, fontSize: 10.5),
                   ),
                 ),
@@ -358,6 +378,23 @@ class ExpensePredictionChart extends StatelessWidget {
       ),
     );
   }
+}
+
+double _niceChartInterval(double roughInterval) {
+  if (!roughInterval.isFinite || roughInterval <= 0) return 1;
+  final magnitude = math.pow(
+    10,
+    (math.log(roughInterval) / math.log(10)).floor(),
+  ).toDouble();
+  final normalized = roughInterval / magnitude;
+  final multiplier = normalized <= 1
+      ? 1
+      : normalized <= 2
+          ? 2
+          : normalized <= 5
+              ? 5
+              : 10;
+  return (multiplier * magnitude).toDouble();
 }
 
 /// Simple animated progress bar used for budgets, goals and SHAP bars.

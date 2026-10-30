@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
 import '../../app/theme.dart';
@@ -28,7 +31,7 @@ class SmsClassifierScreen extends StatefulWidget {
 }
 
 class _SmsClassifierScreenState extends State<SmsClassifierScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final FinanceRepository _repo =
       widget.repository ?? getApiRepository();
   late final SmsInboxService _smsService =
@@ -41,6 +44,22 @@ class _SmsClassifierScreenState extends State<SmsClassifierScreen>
   static final _monthFormat = DateFormat('MMMM yyyy');
   static final _monthShort = DateFormat('MMM');
   static final _shortDateFormat = DateFormat('d MMM yyyy');
+  static final _moneyCue = RegExp(
+    r'(?:₹|rs\.?|inr|\$)\s*[0-9][0-9,]*(?:\.\d{1,2})?',
+    caseSensitive: false,
+  );
+  static final _accountCue = RegExp(
+    r'\b(?:a/?c|account|upi|neft|imps|rtgs|txn|transaction)\b',
+    caseSensitive: false,
+  );
+  static final _debitCue = RegExp(
+    r'\b(?:sent|debited|deducted|withdrawn|spent|paid|purchased)\b',
+    caseSensitive: false,
+  );
+  static final _creditCue = RegExp(
+    r'\b(?:credited|deposited|received|refunded|reversed)\b',
+    caseSensitive: false,
+  );
 
   SmsClassification? _result;
   bool _loading = false;
@@ -51,6 +70,7 @@ class _SmsClassifierScreenState extends State<SmsClassifierScreen>
   final Map<String, SmsClassification> _inboxResults = {};
   final Set<String> _classifying = {};
   final Set<String> _imported = {};
+  StreamSubscription<InboxSms>? _incomingSmsSubscription;
 
   bool _permissionGranted = false;
   bool _permissionPermanentlyDenied = false;
@@ -77,7 +97,36 @@ class _SmsClassifierScreenState extends State<SmsClassifierScreen>
   ];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      _incomingSmsSubscription = _smsService.incomingMessages.listen(
+        _handleIncomingSms,
+        onError: (Object error) {
+          if (mounted) _showSnack('Incoming SMS listener error: $error');
+        },
+      );
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fetchInbox();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        _permissionGranted &&
+        !_loadingInbox &&
+        !_loadingOlder) {
+      _fetchInbox();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _incomingSmsSubscription?.cancel();
     _controller.dispose();
     _tabController.dispose();
     super.dispose();
@@ -94,13 +143,23 @@ class _SmsClassifierScreenState extends State<SmsClassifierScreen>
       _error = null;
     });
     try {
-      final result = await _repo.classifySms(text);
+      final result = _resolveDirectionFromStrongSmsCues(
+        await _repo.classifySms(text),
+      );
       if (!mounted) return;
       setState(() {
         _result = result;
         _loading = false;
       });
-      _showTransactionNotification(result);
+      await _processInboxClassification(
+        InboxSms(
+          address: 'Manual SMS',
+          body: text,
+          date: DateTime.now(),
+        ),
+        result,
+        notify: true,
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -155,13 +214,6 @@ class _SmsClassifierScreenState extends State<SmsClassifierScreen>
       );
       if (!mounted) return;
       setState(() {
-        if (!older) {
-          _inboxMessages.clear();
-          _inboxResults.clear();
-          _classifying.clear();
-          _imported.clear();
-          _monthPickedByUser = false;
-        }
         _mergeMessages(scan.messages);
         _nextScanStart = scan.nextStart;
         _hasOlder = scan.hasMore;
@@ -174,6 +226,27 @@ class _SmsClassifierScreenState extends State<SmsClassifierScreen>
           _selectedMonth = _latestDataMonth ?? _currentMonth;
         }
       });
+
+      // Loading the inbox also runs the classifier and imports valid
+      // credit/debit messages, so they reach the ledger without a second tap.
+      final pending = scan.messages
+          .where((message) => !_inboxResults.containsKey(message.key))
+          .toList();
+      for (final message in pending) {
+        if (!mounted) return;
+        await _classifyInbox(message, notify: false);
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+      }
+      if (pending.isNotEmpty && mounted) {
+        final saved = pending
+            .where((message) => _imported.contains(message.key))
+            .length;
+        _showSnack(
+          saved > 0
+              ? 'Saved $saved detected transaction${saved == 1 ? '' : 's'} to the ledger.'
+              : 'No credit/debit transactions were saved. Check Demo mode and database connection.',
+        );
+      }
 
       if (older && _inboxMessages.length == previousCount) {
         _showSnack('No older bank SMS found on this device.');
@@ -213,6 +286,19 @@ class _SmsClassifierScreenState extends State<SmsClassifierScreen>
       ..clear()
       ..addAll(byKey.values)
       ..sort((a, b) => b.date.compareTo(a.date));
+  }
+
+  Future<void> _handleIncomingSms(InboxSms sms) async {
+    if (!_permissionGranted || !_smsService.isBankSmsCandidate(sms.body)) return;
+    if (_inboxMessages.any((message) => message.key == sms.key)) return;
+    if (!mounted) return;
+    setState(() {
+      _mergeMessages([sms]);
+      if (!_monthPickedByUser) {
+        _selectedMonth = DateTime(sms.date.year, sms.date.month);
+      }
+    });
+    await _classifyInbox(sms);
   }
 
   void _stepMonth(int delta) {
@@ -347,13 +433,15 @@ class _SmsClassifierScreenState extends State<SmsClassifierScreen>
     if (_classifying.contains(sms.key)) return;
     setState(() => _classifying.add(sms.key));
     try {
-      final result = await _repo.classifySms(sms.body);
+      final result = _resolveDirectionFromStrongSmsCues(
+        await _repo.classifySms(sms.body),
+      );
       if (!mounted) return;
       setState(() {
         _inboxResults[sms.key] = result;
         _classifying.remove(sms.key);
       });
-      if (notify) _showTransactionNotification(result);
+      await _processInboxClassification(sms, result, notify: notify);
     } catch (e) {
       if (!mounted) return;
       setState(() => _classifying.remove(sms.key));
@@ -363,7 +451,9 @@ class _SmsClassifierScreenState extends State<SmsClassifierScreen>
 
   Future<void> _classifyMonth() async {
     final targets = _monthMessages
-        .where((message) => !_inboxResults.containsKey(message.key))
+        .where((message) =>
+            !_inboxResults.containsKey(message.key) &&
+            !_classifying.contains(message.key))
         .toList();
     if (targets.isEmpty) {
       _showSnack('Every SMS in ${_monthFormat.format(_selectedMonth)} is already classified.');
@@ -382,97 +472,97 @@ class _SmsClassifierScreenState extends State<SmsClassifierScreen>
     _showSnack('Classified ${targets.length} SMS in ${_monthFormat.format(_selectedMonth)}.');
   }
 
-  bool _isTrustedTransaction(SmsClassification result) {
-    return result.isTransaction &&
-        (result.isCredit || result.isDebit) &&
-        result.confidence >= 80;
-  }
+  SmsClassification _resolveDirectionFromStrongSmsCues(
+    SmsClassification result,
+  ) {
+    if (result.isSpam || !result.isTransaction) return result;
+    final text = result.text;
+    if (!_moneyCue.hasMatch(text) || !_accountCue.hasMatch(text)) return result;
 
-  Future<void> _addToTransactions(InboxSms sms, SmsClassification result) {
-    return _handleClassification(
-      result,
-      sender: sms.address,
-      date: sms.date,
-      messageKey: sms.key,
+    final debit = _debitCue.hasMatch(text);
+    final credit = _creditCue.hasMatch(text);
+    if (debit == credit) return result;
+
+    final category = debit ? 'debit' : 'credit';
+    return SmsClassification(
+      text: result.text,
+      isSpam: false,
+      isTransaction: true,
+      status: result.status,
+      category: category,
+      displayCategory: debit ? 'Debit' : 'Credit',
+      confidence: 100,
+      spamProbability: result.spamProbability,
+      categoryProbabilities: {category: 100},
+      resolvedFromText: true,
     );
   }
 
-  Future<void> _handleClassification(
+  bool _canAutoImport(SmsClassification result) =>
+      !result.isSpam &&
+      result.isTransaction &&
+      (result.isCredit || result.isDebit);
+
+  Future<void> _processInboxClassification(
+    InboxSms sms,
     SmsClassification result, {
-    required String sender,
-    required DateTime date,
-    required String messageKey,
+    required bool notify,
   }) async {
-    if (result.isSpam) {
-      _showSnack('Marked as spam, so it was not added.');
+    if (_canAutoImport(result)) {
+      await _importDetectedTransaction(sms, result, notify: notify);
       return;
     }
-
-    TxnType? type;
-    if (_isTrustedTransaction(result)) {
-      type = result.isCredit ? TxnType.income : TxnType.expense;
-    } else {
-      final decision = await _reviewUncertainTransaction(result);
-      if (!mounted || decision == null) return;
-      if (decision == 'risky') {
-        _showSnack('SMS marked as risky and was not added.');
-        return;
-      }
-      type = decision == 'credit' ? TxnType.income : TxnType.expense;
+    if (notify) {
+      _showSnack(
+        result.isSpam
+            ? 'Model classified this SMS as spam; it was not saved.'
+            : 'Model did not classify this SMS as credit or debit; it was not saved.',
+      );
     }
+  }
 
+  Future<void> _importDetectedTransaction(
+    InboxSms sms,
+    SmsClassification result, {
+    required bool notify,
+  }) async {
+    if (_imported.contains(sms.key)) return;
+    final type = result.isCredit ? TxnType.income : TxnType.expense;
+    await _saveInboxTransaction(sms, result, type, notify: notify);
+  }
+
+  Future<void> _saveInboxTransaction(
+    InboxSms sms,
+    SmsClassification result,
+    TxnType type, {
+    required bool notify,
+  }) async {
+    if (_imported.contains(sms.key)) return;
+    if (demoModeEnabled) {
+      _showSnack('Demo mode is on. Turn it off in Settings to save to PostgreSQL.');
+      return;
+    }
     try {
       await SmsTransactionImporter.import(
         repository: _repo,
         sms: result.text,
-        sender: sender,
-        date: date,
+        sender: sms.address,
+        date: sms.date,
         type: type,
+        messageId: sms.key,
       );
       if (!mounted) return;
-      setState(() => _imported.add(messageKey));
-      _showSnack(
-        '${type == TxnType.income ? 'Credit' : 'Debit'} added to Transactions.',
-      );
+      setState(() => _imported.add(sms.key));
+      if (notify) {
+        _showSnack(
+          '${type == TxnType.income ? 'Credit' : 'Expense'} saved to Transactions.',
+        );
+      }
     } on FormatException catch (error) {
-      if (!mounted) return;
-      _showSnack(error.message);
+      if (notify) _showSnack(error.message);
+    } catch (error) {
+      if (notify) _showSnack('Could not save the transaction: $error');
     }
-  }
-
-  Future<String?> _reviewUncertainTransaction(SmsClassification result) {
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Review SMS transaction'),
-        content: Text(
-          'The model is not confident enough to add this ${result.displayCategory.toLowerCase()} SMS automatically. Is it a regular transaction or risky?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'risky'),
-            child: const Text('Mark risky'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'credit'),
-            child: const Text('Add credit'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, 'debit'),
-            child: const Text('Add debit'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showTransactionNotification(SmsClassification result) {
-    if (!result.isTransaction) return;
-    _showSnack('Transaction SMS detected: ${result.displayCategory}.');
   }
 
   void _showSnack(String message) {
@@ -886,8 +976,8 @@ class _SmsClassifierScreenState extends State<SmsClassifierScreen>
           result: result,
           classifying: _classifying.contains(sms.key),
           imported: _imported.contains(sms.key),
+          eligible: result != null && _canAutoImport(result),
           onClassify: () => _classifyInbox(sms),
-          onAdd: result == null ? null : () => _addToTransactions(sms, result),
         ),
       ));
     }
@@ -1012,8 +1102,9 @@ class _SmsClassifierScreenState extends State<SmsClassifierScreen>
             ),
             const SizedBox(height: 8),
             const Text(
-              'Only messages matching bank keywords are processed.\n'
-              'No data leaves your device without your consent.',
+              'Likely bank messages are classified automatically. With live mode on, '
+              'transaction SMS text is sent to the configured backend for classification '
+              'and valid transactions are saved to your finance database.',
               textAlign: TextAlign.center,
               style: TextStyle(
                   color: AppColors.textMuted,
@@ -1030,29 +1121,20 @@ class _SmsClassifierScreenState extends State<SmsClassifierScreen>
               ),
             ],
             const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _loadingInbox ? null : () => _fetchInbox(),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.accent,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                icon: _loadingInbox
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.inbox_outlined),
-                label: Text(_loadingInbox
-                    ? 'Loading inbox…'
-                    : 'Allow & load inbox'),
+            if (_loadingInbox)
+              const Column(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 12),
+                  Text('Requesting SMS access and loading your inbox...'),
+                ],
+              )
+            else if (!denied)
+              const Text(
+                'SMS inbox loads automatically when you open this screen.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12.5),
               ),
-            ),
             if (_permissionPermanentlyDenied) ...[
               const SizedBox(height: 8),
               TextButton.icon(
@@ -1199,22 +1281,22 @@ class _InboxMessageCard extends StatelessWidget {
     this.result,
     this.classifying = false,
     this.imported = false,
-    this.onAdd,
+    this.eligible = false,
   });
 
   final InboxSms sms;
   final SmsClassification? result;
   final bool classifying;
   final bool imported;
+  final bool eligible;
   final VoidCallback onClassify;
-  final VoidCallback? onAdd;
 
   static final _timeFormat = DateFormat('h:mm a');
 
   @override
   Widget build(BuildContext context) {
     final hasResult = result != null;
-    final isTransaction = hasResult && result!.isTransaction;
+    final isTransaction = hasResult && eligible;
 
     return AppCard(
       padding: const EdgeInsets.all(14),
@@ -1283,10 +1365,18 @@ class _InboxMessageCard extends StatelessWidget {
             Row(
               children: [
                 Pill(
-                  isTransaction ? 'Transaction' : 'Spam / Other',
-                  color: isTransaction ? AppColors.income : AppColors.danger,
+                  imported
+                      ? 'Saved'
+                      : isTransaction
+                          ? 'Transaction'
+                          : 'Skipped by model',
+                  color: imported || isTransaction
+                      ? AppColors.income
+                      : AppColors.danger,
                   filled: true,
-                  icon: isTransaction ? Icons.check_circle : Icons.block,
+                  icon: imported || isTransaction
+                      ? Icons.check_circle
+                      : Icons.block,
                 ),
                 const SizedBox(width: 6),
                 Expanded(
@@ -1296,31 +1386,23 @@ class _InboxMessageCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${result!.confidence.toStringAsFixed(0)}% conf.',
+                  result!.resolvedFromText
+                      ? 'Text cue'
+                      : '${result!.confidence.toStringAsFixed(0)}% conf.',
                   style: const TextStyle(
                       color: AppColors.textMuted, fontSize: 11),
                 ),
               ],
             ),
-            if (isTransaction) ...[
+            if (imported) ...[
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerRight,
-                child: imported
-                    ? const Pill(
-                        'Added to transactions',
-                        color: AppColors.income,
-                        icon: Icons.check_circle,
-                      )
-                    : TextButton.icon(
-                        onPressed: onAdd,
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.accent,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        icon: const Icon(Icons.add_circle_outline, size: 16),
-                        label: const Text('Add to transactions'),
-                      ),
+                child: const Pill(
+                  'Added to transactions',
+                  color: AppColors.income,
+                  icon: Icons.check_circle,
+                ),
               ),
             ],
           ] else

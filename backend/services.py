@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import joblib
 import numpy as np
 import pandas as pd
-import shap-
+import shap
 
 # Model directory
 ML_DIR = Path(__file__).resolve().parents[1] / "ml"

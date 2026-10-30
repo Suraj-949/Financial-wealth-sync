@@ -509,24 +509,34 @@ class PredictionCard extends StatelessWidget {
                 live
                     ? 'Projected Expenses · Next Month'
                     : 'Predicted Expenses · Next Month',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: AppColors.textMuted,
                   fontSize: 13,
                 ),
               ),
             ),
-            Text(
-              live ? 'projection' : Formatters.pct(data.predictionConfidence * 100),
-              style: const TextStyle(
-                color: AppColors.ai,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              live ? 'from history' : 'confidence',
-              style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  live
+                      ? 'Projection'
+                      : Formatters.pct(data.predictionConfidence * 100),
+                  style: const TextStyle(
+                    color: AppColors.ai,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  live ? 'from history' : 'confidence',
+                  style:
+                      const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                ),
+              ],
             ),
           ],
         ),

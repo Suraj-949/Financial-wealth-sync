@@ -426,13 +426,13 @@ SmsClassification _mockClassify(String rawText) {
 final MockFinanceRepository _sharedMockRepository = MockFinanceRepository();
 final ApiFinanceRepository _sharedApiRepository = ApiFinanceRepository();
 
-/// Prototype mode is enabled by default so a fresh install opens with a
-/// complete, clearly labelled sample experience. The choice survives restarts.
-bool demoModeEnabled = true;
+/// Live mode is enabled by default so finance records are persisted by the API.
+/// Demo mode remains available as an explicit setting. The choice survives restarts.
+bool demoModeEnabled = false;
 
 /// Fires whenever the user flips demo mode, so mounted shells can rebuild and
 /// reload from the correct source instead of keeping stale sample rows.
-final ValueNotifier<bool> demoModeListenable = ValueNotifier<bool>(true);
+final ValueNotifier<bool> demoModeListenable = ValueNotifier<bool>(false);
 
 /// Fires after a successful write, so other tabs can refresh without asking
 /// the user to pull-to-refresh.
@@ -467,7 +467,7 @@ Future<void> setUserIdentity(String id) async {
 
 Future<void> loadDemoModePreference() async {
   final prefs = await SharedPreferences.getInstance();
-  demoModeEnabled = prefs.getBool('demo_mode_enabled') ?? true;
+  demoModeEnabled = prefs.getBool('demo_mode_enabled') ?? false;
   demoModeListenable.value = demoModeEnabled;
 }
 
